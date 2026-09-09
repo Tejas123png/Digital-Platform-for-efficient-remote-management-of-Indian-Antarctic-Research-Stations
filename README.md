@@ -45,7 +45,7 @@ Live telemetry pipeline connecting a Python data simulation engine to a real-tim
 Install Flask, Flask-CORS, and NumPy:
 
 ```bash
-cd C:\hackathon
+cd C:\PolarSync
 py -3.13 -m pip install -r requirements.txt
 ```
 
@@ -55,7 +55,7 @@ py -3.13 -m pip install -r requirements.txt
 Install React, Vite, and Chart.js dependencies:
 
 ```bash
-cd C:\hackathon\frontend
+cd C:\PolarSync\frontend
 npm install
 ```
 
@@ -65,7 +65,7 @@ npm install
 
 ### Terminal 1: Start the Python Simulator & Flask API
 ```bash
-cd C:\hackathon
+cd C:\PolarSync
 py -3.13 data_simulator.py --demo
 ```
 
@@ -78,7 +78,7 @@ py -3.13 data_simulator.py --demo
 
 ### Terminal 2: Start the React Frontend (Vite)
 ```bash
-cd C:\hackathon\frontend
+cd C:\PolarSync\frontend
 npm run dev
 ```
 
