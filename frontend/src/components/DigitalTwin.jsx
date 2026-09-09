@@ -26,65 +26,66 @@ import { STATION_ROOMS } from '../data/stationRooms';
 const DEBUG = false;
 
 const ROOM_ZONES = [
-  // ── MAIN BUILDING INTERIOR ───────────────────────────────────
-  // 6 rooms span x 9–57%, y 37–58%  (wall thickness included in rooms)
-
+  // ── MAIN BUILDING INTERIOR ROOMS ─────────────────────────────
   {
     id: 'control',
-    // Control Room — leftmost room in main building
-    // Measured: inner x ≈ 285–445px, inner y ≈ 300–445px
-    left: '20.4%', top: '38.3%', width: '11.4%', height: '18.5%',
+    // Control Room — leftmost room inside main building
+    left: '27.5%', top: '38.3%', width: '8.0%', height: '18.5%',
   },
   {
     id: 'living',
-    // Living Quarters — second room
-    // Measured: inner x ≈ 450–595px, inner y ≈ 300–445px
-    left: '32.3%', top: '38.3%', width: '10.3%', height: '18.5%',
+    // Living Quarters — second room inside main building
+    left: '35.6%', top: '38.3%', width: '8.0%', height: '18.5%',
   },
   {
     id: 'laboratory',
-    // Laboratory — third room (largest single room label visible)
-    // Measured: inner x ≈ 600–730px, inner y ≈ 300–445px
-    left: '43.1%', top: '38.3%', width: '9.3%', height: '18.5%',
+    // Laboratory — third room inside main building
+    left: '43.6%', top: '38.3%', width: '8.0%', height: '18.5%',
   },
   {
-    id: 'hvac',
-    // Canteen area — mapped to HVAC (no separate HVAC room labeled)
-    // Measured: inner x ≈ 735–835px, inner y ≈ 300–445px
-    left: '52.8%', top: '38.3%', width: '7.2%', height: '18.5%',
+    id: 'canteen',
+    // Canteen — between Laboratory and Medical
+    left: '51.6%', top: '38.3%', width: '8.2%', height: '18.5%',
   },
   {
-    id: 'pump',
-    // Medical area — mapped to Pump system (mechanical support room)
-    // Measured: inner x ≈ 840–940px, inner y ≈ 300–445px
-    left: '60.3%', top: '38.3%', width: '7.2%', height: '18.5%',
+    id: 'medical',
+    // Medical Center — between Canteen and Storage
+    left: '59.8%', top: '38.3%', width: '8.2%', height: '18.5%',
   },
   {
     id: 'storage',
-    // Storage — rightmost room in main building
-    // Measured: inner x ≈ 945–1075px, inner y ≈ 300–445px
-    left: '67.9%', top: '38.3%', width: '9.3%', height: '18.5%',
+    // Storage — main building rightmost interior room
+    left: '68.0%', top: '38.3%', width: '7.5%', height: '18.5%',
   },
-
-  // ── RIGHT WING — POWER + GENERATOR ──────────────────────────
   {
     id: 'power',
-    // Power/connection section — right end of main building, links to generator
-    // Measured: inner x ≈ 1080–1155px, y ≈ 300–445px
-    left: '77.6%', top: '38.3%', width: '5.5%', height: '18.5%',
+    // Power / Fuel Storage Tanks area right of main building
+    left: '77.0%', top: '38.3%', width: '9.5%', height: '18.5%',
   },
+
+  // ── EXTERNAL EQUIPMENT / CONTAINER MODULES ───────────────────
+  {
+    id: 'hvac',
+    // Heating/HVAC Module — left blue container box above roof
+    left: '52.8%', top: '29.8%', width: '7.0%', height: '7.2%',
+    isCompact: true,
+  },
+  {
+    id: 'pump',
+    // Pump Module — right blue container box above roof
+    left: '60.6%', top: '29.8%', width: '7.0%', height: '7.2%',
+    isCompact: true,
+  },
+
+  // ── OTHER STRUCTURES ─────────────────────────────────────────
   {
     id: 'generator',
     // Generator Room — red building upper right quadrant
-    // Measured: outer x ≈ 1030–1245px, outer y ≈ 60–295px
     left: '74.0%', top: '7.7%', width: '15.4%', height: '29.6%',
   },
-
-  // ── SEPARATE STRUCTURES ──────────────────────────────────────
   {
     id: 'utility',
-    // Utility Building — green building, lower left
-    // Measured: outer x ≈ 155–290px, outer y ≈ 492–638px
+    // Utility Building — green building lower left
     left: '11.1%', top: '62.8%', width: '9.7%', height: '18.6%',
   },
 ];
@@ -109,21 +110,6 @@ export default function DigitalTwin({ stationData, selectedRoom, onRoomSelect, a
         MAITRI — SCHIRMACHER OASIS, ANTARCTICA — 70°45′52″S 11°44′03″E
       </div>
 
-      {/*
-        ┌── ps-twin__wrapper (position: relative, inline-block) ──┐
-        │  ┌── img (width: 100%, height: auto) ──────────────────┐ │
-        │  │  Station image fills wrapper width exactly           │ │
-        │  └──────────────────────────────────────────────────────┘ │
-        │  ┌── ps-twin__overlays (position: absolute, inset: 0) ─┐ │
-        │  │  Covers EXACTLY the same pixels as the image         │ │
-        │  └──────────────────────────────────────────────────────┘ │
-        └─────────────────────────────────────────────────────────┘
-
-        The wrapper is inline-block so it hugs the image tightly.
-        The overlays are absolute over the wrapper = over the image.
-        Zone % coords are relative to the wrapper = image dimensions.
-        Works at any size / on any screen.
-      */}
       <div className="ps-twin__wrapper">
         <img
           src="/maitri_station.jpg"
@@ -139,6 +125,7 @@ export default function DigitalTwin({ stationData, selectedRoom, onRoomSelect, a
             const isSelected = selectedRoom === zone.id;
             const hasAlert = alertRoomIds.has(zone.id);
             const zoneStatus = hasAlert ? status : '';
+            const compactClass = zone.isCompact ? 'compact' : '';
 
             return (
               <div
@@ -146,7 +133,7 @@ export default function DigitalTwin({ stationData, selectedRoom, onRoomSelect, a
                 role="button"
                 tabIndex={0}
                 aria-label={`Select ${getRoomName(zone.id)}`}
-                className={`ps-room-zone ${isSelected ? 'selected' : ''} ${zoneStatus}`}
+                className={`ps-room-zone ${isSelected ? 'selected' : ''} ${zoneStatus} ${compactClass}`}
                 style={{
                   left:   zone.left,
                   top:    zone.top,
@@ -157,8 +144,10 @@ export default function DigitalTwin({ stationData, selectedRoom, onRoomSelect, a
                 onClick={() => onRoomSelect(isSelected ? null : zone.id)}
                 onKeyDown={(e) => e.key === 'Enter' && onRoomSelect(isSelected ? null : zone.id)}
               >
-                <span className="ps-room-zone__label">{getRoomName(zone.id)}</span>
-                <span className={`ps-room-zone__dot ${status}`} />
+                <div className="ps-room-zone__badge">
+                  <span className={`ps-room-zone__dot ${status}`} />
+                  <span className="ps-room-zone__label">{getRoomName(zone.id)}</span>
+                </div>
 
                 {/* Debug overlay — shows zone boundaries and coords */}
                 {DEBUG && (

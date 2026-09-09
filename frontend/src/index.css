@@ -625,19 +625,19 @@ body {
   transition: all 0.15s ease;
   display: flex;
   align-items: flex-start;
-  justify-content: flex-start;
-  padding: 3px;
+  justify-content: center;
+  padding: 2px;
 }
 
 .ps-room-zone:hover {
   border-color: rgba(88, 166, 255, 0.6);
-  background: rgba(88, 166, 255, 0.1);
+  background: rgba(88, 166, 255, 0.12);
 }
 
 .ps-room-zone.selected {
   border-color: #58a6ff;
-  background: rgba(88, 166, 255, 0.18);
-  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.3);
+  background: rgba(88, 166, 255, 0.2);
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.4);
 }
 
 .ps-room-zone.warning {
@@ -646,7 +646,7 @@ body {
 
 .ps-room-zone.warning:hover, .ps-room-zone.warning.selected {
   border-color: var(--status-warning);
-  background: rgba(210, 153, 34, 0.12);
+  background: rgba(210, 153, 34, 0.15);
 }
 
 .ps-room-zone.critical {
@@ -655,35 +655,94 @@ body {
 
 .ps-room-zone.critical:hover, .ps-room-zone.critical.selected {
   border-color: var(--status-critical);
-  background: rgba(248, 81, 73, 0.12);
+  background: rgba(248, 81, 73, 0.15);
+}
+
+.ps-room-zone__badge {
+  position: absolute;
+  top: -18px;                 /* Shifted to upper side above room box */
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(10, 15, 26, 0.92);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  padding: 1.5px 5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+.ps-room-zone:hover .ps-room-zone__badge {
+  background: rgba(13, 22, 40, 0.95);
+  border-color: rgba(88, 166, 255, 0.8);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.85), 0 0 8px rgba(88, 166, 255, 0.4);
+  transform: translateX(-50%) scale(1.06);
+}
+
+.ps-room-zone.selected .ps-room-zone__badge {
+  background: rgba(15, 30, 55, 0.95);
+  border-color: #58a6ff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.9), 0 0 10px rgba(88, 166, 255, 0.5);
+}
+
+/* Compact container hotspot mode (HVAC & Pump blue container modules) */
+.ps-room-zone.compact {
+  padding: 1px;
+}
+
+.ps-room-zone.compact .ps-room-zone__badge {
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 4px;
+  gap: 3px;
+  border-radius: 3px;
+}
+
+.ps-room-zone.compact:hover .ps-room-zone__badge {
+  transform: translateX(-50%) scale(1.06);
+}
+
+.ps-room-zone.compact .ps-room-zone__label {
+  font-size: clamp(7.5px, 0.7vw, 9.5px);
+  letter-spacing: 0.02em;
+}
+
+.ps-room-zone.compact .ps-room-zone__dot {
+  width: 5px;
+  height: 5px;
 }
 
 .ps-room-zone__label {
-  font-size: 8px;
+  font-size: clamp(9px, 0.85vw, 11px);
   font-weight: 700;
-  letter-spacing: 0.04em;
-  color: rgba(255,255,255,0.85);
-  background: rgba(0,0,0,0.5);
-  padding: 1px 3px;
-  border-radius: 2px;
+  letter-spacing: 0.05em;
+  color: #ffffff;
   text-transform: uppercase;
   white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  line-height: 1.2;
   pointer-events: none;
 }
 
 .ps-room-zone__dot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  flex-shrink: 0;
   pointer-events: none;
 }
 
-.ps-room-zone__dot.normal   { background: var(--status-normal); }
-.ps-room-zone__dot.warning  { background: var(--status-warning); animation: ps-pulse 1.5s infinite; }
-.ps-room-zone__dot.critical { background: var(--status-critical); animation: ps-pulse 0.8s infinite; }
+.ps-room-zone__dot.normal   { background: var(--status-normal); box-shadow: 0 0 5px var(--status-normal); }
+.ps-room-zone__dot.warning  { background: var(--status-warning); box-shadow: 0 0 5px var(--status-warning); animation: ps-pulse 1.5s infinite; }
+.ps-room-zone__dot.critical { background: var(--status-critical); box-shadow: 0 0 5px var(--status-critical); animation: ps-pulse 0.8s infinite; }
 .ps-room-zone__dot.unknown  { background: var(--status-offline); }
 
 /* ── ROOM INFO PANEL ───────────────────────────────────────── */

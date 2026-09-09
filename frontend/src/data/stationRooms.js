@@ -146,6 +146,36 @@ export const STATION_ROOMS = [
     },
   },
   {
+    id: 'canteen',
+    name: 'Canteen',
+    shortName: 'Canteen',
+    category: 'habitat',
+    icon: '🍽️',
+    description: 'Crew dining area and food storage tracking',
+    telemetryFields: ['food_stock_kg', 'food_days_remaining', 'food_consumption_daily_kg', 'food_storage_temperature', 'food_status'],
+    statusLogic: (data) => {
+      if (!data) return 'unknown';
+      if (data.food_status === 'CRITICAL') return 'critical';
+      if (data.food_status === 'LOW') return 'warning';
+      return 'normal';
+    },
+  },
+  {
+    id: 'medical',
+    name: 'Medical Center',
+    shortName: 'Medical',
+    category: 'support',
+    icon: '⚕️',
+    description: 'Station medical facilities, life support, and emergency equipment',
+    telemetryFields: ['medicine_stock_units', 'medicine_days_remaining', 'medicine_consumption_daily', 'critical_medicine_items', 'low_medicine_items', 'medicine_storage_temperature', 'medicine_status'],
+    statusLogic: (data) => {
+      if (!data) return 'unknown';
+      if (data.medicine_status === 'CRITICAL') return 'critical';
+      if (data.medicine_status === 'LOW') return 'warning';
+      return 'normal';
+    },
+  },
+  {
     id: 'utility',
     name: 'Utility Building',
     shortName: 'Utility',
@@ -175,6 +205,18 @@ export const TELEMETRY_LABELS = {
   vibration: { label: 'Vibration', unit: 'mm/s', precision: 2, max: 12 },
   runtime: { label: 'Runtime', unit: 'hrs', precision: 0, max: 99999 },
   timestamp: { label: 'Last Updated', unit: '', isTimestamp: true },
+  food_stock_kg: { label: 'Food Stock', unit: 'kg', precision: 0, max: 5000 },
+  food_days_remaining: { label: 'Food Days Remaining', unit: 'days', precision: 0 },
+  food_consumption_daily_kg: { label: 'Food Consumption', unit: 'kg/day', precision: 1 },
+  food_storage_temperature: { label: 'Food Storage Temp', unit: '°C', precision: 1 },
+  food_status: { label: 'Food Status', unit: '', precision: 0 },
+  medicine_stock_units: { label: 'Medicine Stock', unit: 'units', precision: 0 },
+  medicine_days_remaining: { label: 'Medicine Days Remaining', unit: 'days', precision: 0 },
+  medicine_consumption_daily: { label: 'Medicine Consumption', unit: 'units/day', precision: 1 },
+  critical_medicine_items: { label: 'Critical Meds', unit: 'items', precision: 0 },
+  low_medicine_items: { label: 'Low Meds', unit: 'items', precision: 0 },
+  medicine_storage_temperature: { label: 'Medicine Storage Temp', unit: '°C', precision: 1 },
+  medicine_status: { label: 'Medicine Status', unit: '', precision: 0 },
 };
 
 export const ALERT_RULES = [

@@ -37,6 +37,9 @@ MAX_ANOMALY_DURATION = 8
 # Network mode ("NORMAL" or "SLOW")
 NETWORK_MODE = os.environ.get("NETWORK_MODE", "NORMAL")
 
+# Simulation time multiplier for inventory/slow processes
+SIMULATION_TIME_MULTIPLIER = int(os.environ.get("SIMULATION_TIME_MULTIPLIER", 1))
+
 
 # ============================================================
 # INITIAL STATION STATE
@@ -54,7 +57,17 @@ station = {
     "pump_status": 1,
     "equipment_temperature": 35.0,
     "vibration": 2.0,
-    "runtime": 1200
+    "runtime": 1200,
+    "food_stock_kg": 1840.0,
+    "food_consumption_daily_kg": 20.0,
+    "food_storage_temperature": -18.0,
+    "food_expiry_risk": 2,
+    "medicine_stock_units": 428.0,
+    "medicine_consumption_daily": 3.5,
+    "critical_medicine_items": 3,
+    "low_medicine_items": 5,
+    "medicine_expiry_risk": 2,
+    "medicine_storage_temperature": 4.0
 }
 
 
@@ -354,6 +367,49 @@ def generate_data():
             anomaly_remaining = 0
 
     # --------------------------------------------------------
+    # Inventory Simulation (Food & Medicine)
+    # --------------------------------------------------------
+    
+    # Calculate simulated days passed in this tick
+    days_passed = SIMULATION_TIME_MULTIPLIER / (24.0 * 60.0)
+
+    # Food consumption
+    station["food_stock_kg"] -= station["food_consumption_daily_kg"] * days_passed
+    station["food_stock_kg"] = max(0.0, station["food_stock_kg"])
+    
+    food_days_remaining = 0
+    if station["food_consumption_daily_kg"] > 0:
+        food_days_remaining = int(station["food_stock_kg"] / station["food_consumption_daily_kg"])
+
+    if food_days_remaining > 60:
+        food_status = "NORMAL"
+    elif food_days_remaining > 30:
+        food_status = "LOW"
+    else:
+        food_status = "CRITICAL"
+
+    # Medicine consumption (event based probability)
+    # small event
+    if np.random.random() < (0.5 * days_passed):
+        station["medicine_stock_units"] -= np.random.randint(1, 5)
+    # emergency event
+    if np.random.random() < (0.05 * days_passed):
+        station["medicine_stock_units"] -= np.random.randint(10, 30)
+    
+    station["medicine_stock_units"] = max(0.0, station["medicine_stock_units"])
+
+    medicine_days_remaining = 0
+    if station["medicine_consumption_daily"] > 0:
+        medicine_days_remaining = int(station["medicine_stock_units"] / station["medicine_consumption_daily"])
+
+    if medicine_days_remaining <= 30 or station["critical_medicine_items"] > 0:
+        medicine_status = "CRITICAL"
+    elif medicine_days_remaining <= 60 or station["low_medicine_items"] > 0:
+        medicine_status = "LOW"
+    else:
+        medicine_status = "NORMAL"
+
+    # --------------------------------------------------------
     # Network status simulation
     # --------------------------------------------------------
     current_net_mode = os.environ.get("NETWORK_MODE", NETWORK_MODE)
@@ -420,7 +476,21 @@ def generate_data():
         "network_bandwidth": net_bandwidth,
         "network_latency": net_latency,
         "packet_loss": pkt_loss,
-        "signal_strength": sig_strength
+        "signal_strength": sig_strength,
+        "food_stock_kg": int(station["food_stock_kg"]),
+        "food_days_remaining": food_days_remaining,
+        "food_consumption_daily_kg": station["food_consumption_daily_kg"],
+        "food_storage_temperature": station["food_storage_temperature"],
+        "food_status": food_status,
+        "food_expiry_risk": station["food_expiry_risk"],
+        "medicine_stock_units": int(station["medicine_stock_units"]),
+        "medicine_days_remaining": medicine_days_remaining,
+        "medicine_consumption_daily": station["medicine_consumption_daily"],
+        "critical_medicine_items": station["critical_medicine_items"],
+        "low_medicine_items": station["low_medicine_items"],
+        "medicine_expiry_risk": station["medicine_expiry_risk"],
+        "medicine_storage_temperature": station["medicine_storage_temperature"],
+        "medicine_status": medicine_status
     }
 
     return data
@@ -459,8 +529,8 @@ def run_simulator_background():
                 flush=True
             )
 
-            # Move simulated timestamp exactly one minute forward
-            simulation_time += timedelta(minutes=1)
+            # Move simulated timestamp forward
+            simulation_time += timedelta(minutes=SIMULATION_TIME_MULTIPLIER)
 
             # Wait before generating next record
             time.sleep(INTERVAL_SECONDS)
