@@ -42,3 +42,27 @@ export async function checkHealth() {
     return false;
   }
 }
+
+/**
+ * Request AI analysis for a specific alert
+ * @param {string} alertId - e.g. 'low_battery'
+ * @param {string} alertMessage - e.g. 'LOW BATTERY RESERVE'
+ * @param {string} severity - 'critical' or 'warning'
+ * @returns {Promise<Object>} Structured AI analysis
+ */
+export async function analyzeAlert(alertId, alertMessage, severity) {
+  const response = await fetch(`${API_URL}/api/alerts/analyze`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    body: JSON.stringify({
+      alert_id: alertId,
+      alert_message: alertMessage,
+      severity: severity
+    })
+  });
+
+  return await response.json();
+}

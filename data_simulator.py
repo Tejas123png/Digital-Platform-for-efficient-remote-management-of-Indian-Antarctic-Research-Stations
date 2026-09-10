@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import time
+from collections import deque
 from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
@@ -502,6 +503,7 @@ def generate_data():
 
 simulation_time = datetime.now()
 latest_data = {}
+telemetry_history = deque(maxlen=20)   # rolling buffer for AI context
 data_lock = threading.Lock()
 
 
@@ -519,6 +521,7 @@ def run_simulator_background():
             # Safely update latest_data for API consumers
             with data_lock:
                 latest_data = data
+                telemetry_history.append(data)
 
             # ONLY JSON IS PRINTED TO THE TERMINAL (preserves existing behavior)
             print(
@@ -579,6 +582,74 @@ def get_data():
         if not latest_data:
             latest_data = generate_data()
         return jsonify(latest_data)
+
+
+@app.route("/api/telemetry/history", methods=["GET"])
+def get_telemetry_history():
+    """Returns recent telemetry history for trend analysis."""
+    with data_lock:
+        return jsonify(list(telemetry_history))
+
+
+@app.route("/api/alerts/analyze", methods=["POST"])
+def analyze_alert_endpoint():
+    """AI-powered alert analysis via local Ollama.
+
+    Expects JSON body:
+      { "alert_id": "low_battery", "alert_message": "LOW BATTERY RESERVE", "severity": "critical" }
+
+    Returns structured AI analysis or error.
+    """
+    try:
+        from ollama_service import analyze_alert
+    except ImportError as e:
+        return jsonify({
+            "error": True,
+            "summary": f"AI service module not available: {e}",
+            "possible_causes": [],
+            "affected_systems": [],
+            "risk": "AI analysis unavailable.",
+            "recommended_actions": ["Ensure ollama_service.py exists alongside data_simulator.py."]
+        }), 503
+
+    req = request.get_json(silent=True) or {}
+    alert_id      = req.get("alert_id",      "unknown")
+    alert_message = req.get("alert_message",  "Unknown alert")
+    severity      = req.get("severity",       "unknown")
+
+    # Build alert context from current state
+    with data_lock:
+        current = dict(latest_data) if latest_data else {}
+        history_list = list(telemetry_history)
+
+    # Select relevant telemetry fields for the context
+    relevant_keys = [
+        "energy", "generator_load", "power_generation", "power_consumption",
+        "fuel_level", "battery_soc", "heating", "generator_health",
+        "pump_status", "equipment_temperature", "vibration"
+    ]
+    current_telem = {k: current.get(k) for k in relevant_keys if current.get(k) is not None}
+
+    # Build compact history (only relevant fields, last 10 entries)
+    recent = []
+    for snap in history_list[-10:]:
+        entry = {k: snap.get(k) for k in relevant_keys if snap.get(k) is not None}
+        recent.append(entry)
+
+    alert_context = {
+        "station": "Maitri",
+        "alert": {
+            "type":     alert_id,
+            "message":  alert_message,
+            "severity": severity,
+        },
+        "current_telemetry": current_telem,
+        "recent_telemetry":  recent,
+    }
+
+    result = analyze_alert(alert_context)
+    status_code = 503 if result.get("error") else 200
+    return jsonify(result), status_code
 
 
 if __name__ == "__main__":
