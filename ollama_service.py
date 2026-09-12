@@ -17,7 +17,7 @@ import traceback
 from threading import Thread
 
 # ── Configuration ────────────────────────────────────────────
-OLLAMA_MODEL   = os.environ.get("OLLAMA_MODEL",   "qwen3:2b")
+OLLAMA_MODEL   = os.environ.get("OLLAMA_MODEL",   "qwen3:1.7b")
 OLLAMA_HOST    = os.environ.get("OLLAMA_HOST",     "http://localhost:11434")
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "60"))
 

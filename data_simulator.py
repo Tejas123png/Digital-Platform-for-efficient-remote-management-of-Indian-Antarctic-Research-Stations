@@ -79,6 +79,7 @@ station = {
 
 active_anomaly = None
 anomaly_remaining = 0
+injected_anomaly = None
 
 ANOMALY_TYPES = [
     "GENERATOR_LOAD_SPIKE",
@@ -106,6 +107,7 @@ def generate_data():
 
     global active_anomaly
     global anomaly_remaining
+    global injected_anomaly
 
     # --------------------------------------------------------
     # Start a new anomaly
@@ -413,19 +415,28 @@ def generate_data():
     # --------------------------------------------------------
     # Network status simulation
     # --------------------------------------------------------
-    current_net_mode = os.environ.get("NETWORK_MODE", NETWORK_MODE)
-    if current_net_mode == "SLOW":
-        net_status = "SLOW"
-        net_bandwidth = round(float(np.random.uniform(5.5, 9.5)), 1)
-        net_latency = int(np.random.randint(250, 450))
-        pkt_loss = round(float(np.random.uniform(3.0, 8.0)), 1)
-        sig_strength = int(np.random.randint(45, 65))
+    # Injected communication_loss overrides network mode
+    if injected_anomaly is not None and injected_anomaly["type"] == "communication_loss":
+        net_status = "DEGRADED"
+        net_bandwidth = round(float(np.random.uniform(1.0, 5.0)), 1)
+        net_latency = int(np.random.randint(400, 900))
+        pkt_loss = round(float(np.random.uniform(8.0, 25.0)), 1)
+        sig_strength = int(np.random.randint(15, 35))
+        injected_anomaly["readings"].append(net_bandwidth)
     else:
-        net_status = "NORMAL"
-        net_bandwidth = round(float(np.random.uniform(75.0, 92.0)), 1)
-        net_latency = int(np.random.randint(50, 80))
-        pkt_loss = round(float(np.random.uniform(0.2, 1.2)), 1)
-        sig_strength = int(np.random.randint(88, 98))
+        current_net_mode = os.environ.get("NETWORK_MODE", NETWORK_MODE)
+        if current_net_mode == "SLOW":
+            net_status = "SLOW"
+            net_bandwidth = round(float(np.random.uniform(5.5, 9.5)), 1)
+            net_latency = int(np.random.randint(250, 450))
+            pkt_loss = round(float(np.random.uniform(3.0, 8.0)), 1)
+            sig_strength = int(np.random.randint(45, 65))
+        else:
+            net_status = "NORMAL"
+            net_bandwidth = round(float(np.random.uniform(75.0, 92.0)), 1)
+            net_latency = int(np.random.randint(50, 80))
+            pkt_loss = round(float(np.random.uniform(0.2, 1.2)), 1)
+            sig_strength = int(np.random.randint(88, 98))
 
     # --------------------------------------------------------
     # Create JSON object
@@ -514,8 +525,8 @@ data_lock = threading.Lock()
 def run_simulator_background():
     """Continuously runs the simulation loop in a background thread."""
     global simulation_time, latest_data
-    try:
-        while True:
+    while True:
+        try:
             data = generate_data()
 
             # Safely update latest_data for API consumers
@@ -535,11 +546,13 @@ def run_simulator_background():
             # Move simulated timestamp forward
             simulation_time += timedelta(minutes=SIMULATION_TIME_MULTIPLIER)
 
-            # Wait before generating next record
-            time.sleep(INTERVAL_SECONDS)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Simulator error in background thread: {e}", flush=True)
 
-    except Exception as e:
-        print(f"Simulator error in background thread: {e}", flush=True)
+        # Wait before generating next record
+        time.sleep(INTERVAL_SECONDS)
 
 
 # ============================================================
