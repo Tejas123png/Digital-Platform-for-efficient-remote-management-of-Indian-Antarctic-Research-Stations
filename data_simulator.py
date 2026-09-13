@@ -1,558 +1,137 @@
 import json
-import os
 import threading
 import time
-from collections import deque
-from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import numpy as np
+from flasgger import Swagger
+from collections import deque
+
+from simulation_core import SimulationConfig, SimulationCore, StationID, SimulationRNG, SCENARIO_TYPES
+from environment import load_maitri_dataset, ReplayEngine
+
+config = SimulationConfig.from_env()
+config.dataset_path = config.dataset_path or "data/maitri_weather_2016.json"
+
+maitri_records = load_maitri_dataset(config.dataset_path)
+maitri_environment = ReplayEngine(
+    maitri_records,
+    simulation_time_multiplier=config.simulation_time_multiplier,
+    dataset_interval_minutes=60,  # Maitri_AWS_2016 is hourly
+)
+
+bharati_records = load_maitri_dataset("data/bharati_weather_2026.json")
+bharati_environment = ReplayEngine(
+    bharati_records,
+    simulation_time_multiplier=config.simulation_time_multiplier,
+    dataset_interval_minutes=1,  # Bharati_AWS_2026 is minute-sampled
+)
+
+cores = {
+    StationID.MAITRI: SimulationCore(
+        station_id=StationID.MAITRI,
+        config=config,
+        environment_source=maitri_environment,
+    ),
+    StationID.BHARATI: SimulationCore(
+        station_id=StationID.BHARATI,
+        config=config,
+        rng=SimulationRNG(config.seed + 1 if config.seed is not None else None),
+        environment_source=bharati_environment,
+    ),
+}
+
+latest_data = {StationID.MAITRI: {}, StationID.BHARATI: {}}
+telemetry_history = {
+    StationID.MAITRI: deque(maxlen=20),
+    StationID.BHARATI: deque(maxlen=20),
+}
+data_lock = threading.Lock()
+
+# Simulator can be paused/resumed via the API without killing the
+# background thread or losing station state -- stopping just means
+# "stop ticking," not "destroy the simulation."
+simulator_running = threading.Event()
+simulator_running.set()
+
+# Small, deterministic threshold list -- same pattern already used in
+# the frontend's stationRooms.js alert rules, ported here so the demo
+# snapshot endpoint is self-contained. Not AI, not new physics.
+def compute_alerts(d: dict) -> list:
+    alerts = []
+    if d.get("battery_soc", 100) <= 10:
+        alerts.append({"id": "battery_critical", "severity": "CRITICAL", "message": "Battery reserve critical"})
+    if d.get("fuel_level", 100) <= 15:
+        alerts.append({"id": "fuel_low", "severity": "HIGH", "message": "Fuel level low"})
+    if d.get("generator_status") != "RUNNING":
+        alerts.append({"id": "generator_not_running", "severity": "CRITICAL", "message": f"Generator status: {d.get('generator_status')}"})
+    if d.get("critical_systems_powered") is False:
+        alerts.append({"id": "critical_power_loss", "severity": "CRITICAL", "message": "Critical systems unpowered"})
+    if d.get("medicine_status") == "CRITICAL":
+        alerts.append({"id": "medicine_critical", "severity": "HIGH", "message": "Medicine stock critical"})
+    if d.get("resupply_risk") == "CRITICAL":
+        alerts.append({"id": "resupply_critical", "severity": "HIGH", "message": "Resupply risk critical"})
+    if d.get("communication_equipment_status") == "OFFLINE":
+        alerts.append({"id": "comms_offline", "severity": "HIGH", "message": "Communication equipment offline"})
+    if d.get("water_treatment_status") == "OFFLINE":
+        alerts.append({"id": "water_offline", "severity": "HIGH", "message": "Water treatment offline"})
+    return alerts
 
 
-import sys
+# Domain groupings for /telemetry/{domain}/latest -- to_api_dict() is a
+# flat dict, so this just slices it by field name rather than requiring
+# a new nested response shape that would break /api/data compatibility.
+DOMAIN_FIELDS = {
+    "environment": ["temperature", "air_pressure", "wind_speed", "wind_direction", "humidity",
+                     "environment_source_type", "environment_quality"],
+    "energy": ["energy", "generator_status", "critical_systems_powered", "generator_load",
+               "power_generation", "power_consumption", "fuel_level", "battery_soc", "generator_health"],
+    "infrastructure": ["heating", "pump_status", "equipment_temperature", "vibration", "runtime",
+                        "network_status", "network_bandwidth", "network_latency", "packet_loss",
+                        "signal_strength", "communication_equipment_health", "communication_equipment_status",
+                        "water_treatment_health", "water_treatment_status", "backup_heater_health",
+                        "backup_heater_active"],
+    "logistics": ["food_stock_kg", "food_days_remaining", "food_consumption_daily_kg",
+                  "food_storage_temperature", "food_status", "food_expiry_risk",
+                  "medicine_stock_units", "medicine_days_remaining", "medicine_consumption_daily",
+                  "medicine_expiry_risk", "medicine_storage_temperature", "medicine_status",
+                  "generator_fuel_reserve_l", "generator_fuel_reserve_days_remaining", "resupply_risk"],
+}
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-# Simulation generation interval in seconds.
-# Default is 2 seconds for live hackathon demo (updates visibly in real-time).
-# For production 60-second simulation, pass --prod or set INTERVAL_SECONDS=60.
-INTERVAL_SECONDS = 2
-if "--prod" in sys.argv or "--production" in sys.argv:
-    INTERVAL_SECONDS = 60
-elif "INTERVAL_SECONDS" in os.environ:
-    try:
-        INTERVAL_SECONDS = int(os.environ["INTERVAL_SECONDS"])
-    except ValueError:
-        INTERVAL_SECONDS = 2
-
-# Probability of starting an anomaly on any normal minute
-ANOMALY_PROBABILITY = 0.05
-
-# Anomaly duration in simulated minutes
-MIN_ANOMALY_DURATION = 3
-MAX_ANOMALY_DURATION = 8
-
-# Network mode ("NORMAL" or "SLOW")
-NETWORK_MODE = os.environ.get("NETWORK_MODE", "NORMAL")
-
-# Simulation time multiplier for inventory/slow processes
-SIMULATION_TIME_MULTIPLIER = int(os.environ.get("SIMULATION_TIME_MULTIPLIER", 1))
-
-
-# ============================================================
-# INITIAL STATION STATE
-# ============================================================
-
-station = {
-    "energy": 500.0,
-    "generator_load": 60.0,
-    "power_generation": 80.0,
-    "power_consumption": 65.0,
-    "fuel_level": 75.0,
-    "battery_soc": 90.0,
-    "heating": 20.0,
-    "generator_health": 95.0,
-    "pump_status": 1,
-    "equipment_temperature": 35.0,
-    "vibration": 2.0,
-    "runtime": 1200,
-    "food_stock_kg": 1840.0,
-    "food_consumption_daily_kg": 20.0,
-    "food_storage_temperature": -18.0,
-    "food_expiry_risk": 2,
-    "medicine_stock_units": 428.0,
-    "medicine_consumption_daily": 3.5,
-    "critical_medicine_items": 3,
-    "low_medicine_items": 5,
-    "medicine_expiry_risk": 2,
-    "medicine_storage_temperature": 4.0
+SCENARIO_PRESETS = {
+    "extreme_cold_demo": {"type": "EXTREME_COLD", "duration_ticks": 30},
+    "extreme_wind_demo": {"type": "EXTREME_WIND", "duration_ticks": 30},
+    "pressure_drop_demo": {"type": "PRESSURE_DROP", "duration_ticks": 30},
+    "humidity_anomaly_demo": {"type": "HUMIDITY_ANOMALY", "duration_ticks": 30},
+    "generator_failure_demo": {"type": "GENERATOR_FAILURE", "duration_ticks": 20},
+    "communication_failure_demo": {"type": "COMMUNICATION_FAILURE", "duration_ticks": 20},
 }
 
 
-# ============================================================
-# INTERNAL ANOMALY STATE
-# These are NOT printed in the JSON output.
-# ============================================================
+def _parse_station(default="MAITRI"):
+    """Shared station-param parsing, used by every station-scoped route."""
+    station_param = request.args.get("station") or (request.get_json(silent=True) or {}).get("station") or default
+    station_param = station_param.upper()
+    try:
+        return StationID(station_param), None
+    except ValueError:
+        return None, jsonify({"error": f"Unknown station '{station_param}'. Known: {[s.value for s in StationID]}"}), 400
 
-active_anomaly = None
-anomaly_remaining = 0
-injected_anomaly = None
-
-ANOMALY_TYPES = [
-    "GENERATOR_LOAD_SPIKE",
-    "POWER_GENERATION_DROP",
-    "POWER_CONSUMPTION_SPIKE",
-    "HEATING_SURGE",
-    "PUMP_FAILURE",
-    "HIGH_VIBRATION"
-]
-
-
-# ============================================================
-# HELPER FUNCTION
-# ============================================================
-
-def clamp(value, minimum, maximum):
-    return max(minimum, min(value, maximum))
-
-
-# ============================================================
-# GENERATE ONE DATA POINT
-# ============================================================
-
-def generate_data():
-
-    global active_anomaly
-    global anomaly_remaining
-    global injected_anomaly
-
-    # --------------------------------------------------------
-    # Start a new anomaly
-    # --------------------------------------------------------
-
-    if active_anomaly is None:
-
-        if np.random.random() < ANOMALY_PROBABILITY:
-
-            active_anomaly = np.random.choice(ANOMALY_TYPES)
-
-            anomaly_remaining = int(
-                np.random.randint(
-                    MIN_ANOMALY_DURATION,
-                    MAX_ANOMALY_DURATION + 1
-                )
-            )
-
-    # --------------------------------------------------------
-    # Normal generator load
-    # --------------------------------------------------------
-
-    station["generator_load"] += np.random.uniform(-3.0, 3.0)
-
-    station["generator_load"] = clamp(
-        station["generator_load"],
-        20.0,
-        90.0
-    )
-
-    # --------------------------------------------------------
-    # Normal power generation
-    # --------------------------------------------------------
-
-    station["power_generation"] = (
-        station["generator_load"] * 1.20
-        + np.random.normal(0, 2)
-    )
-
-    station["power_generation"] = clamp(
-        station["power_generation"],
-        20.0,
-        120.0
-    )
-
-    # --------------------------------------------------------
-    # Normal power consumption
-    # --------------------------------------------------------
-
-    station["power_consumption"] += np.random.uniform(-4.0, 4.0)
-
-    station["power_consumption"] = clamp(
-        station["power_consumption"],
-        30.0,
-        110.0
-    )
-
-    # --------------------------------------------------------
-    # Equipment temperature
-    # --------------------------------------------------------
-
-    station["equipment_temperature"] += np.random.uniform(
-        -0.5,
-        0.5
-    )
-
-    station["equipment_temperature"] = clamp(
-        station["equipment_temperature"],
-        15.0,
-        80.0
-    )
-
-    # --------------------------------------------------------
-    # Heating
-    # Colder equipment/environment -> more heating
-    # --------------------------------------------------------
-
-    station["heating"] = (
-        15.0
-        + max(
-            0.0,
-            40.0 - station["equipment_temperature"]
-        ) * 0.6
-        + np.random.normal(0, 2)
-    )
-
-    station["heating"] = clamp(
-        station["heating"],
-        0.0,
-        60.0
-    )
-
-    # --------------------------------------------------------
-    # Fuel consumption
-    # --------------------------------------------------------
-
-    fuel_usage = (
-        station["power_generation"] * 0.0007
-        + np.random.uniform(0.01, 0.03)
-    )
-
-    station["fuel_level"] -= fuel_usage
-
-    station["fuel_level"] = clamp(
-        station["fuel_level"],
-        0.0,
-        100.0
-    )
-
-    # --------------------------------------------------------
-    # Battery SOC
-    # --------------------------------------------------------
-
-    energy_difference = (
-        station["power_generation"]
-        - station["power_consumption"]
-    )
-
-    station["battery_soc"] += (
-        energy_difference * 0.03
-        + np.random.normal(0, 0.2)
-    )
-
-    station["battery_soc"] = clamp(
-        station["battery_soc"],
-        0.0,
-        100.0
-    )
-
-    # --------------------------------------------------------
-    # Generator health
-    # --------------------------------------------------------
-
-    station["generator_health"] -= np.random.uniform(
-        0.001,
-        0.01
-    )
-
-    station["generator_health"] = clamp(
-        station["generator_health"],
-        0.0,
-        100.0
-    )
-
-    # --------------------------------------------------------
-    # Pump status
-    # --------------------------------------------------------
-
-    station["pump_status"] = 1
-
-    # --------------------------------------------------------
-    # Vibration
-    # --------------------------------------------------------
-
-    station["vibration"] += np.random.uniform(
-        -0.2,
-        0.2
-    )
-
-    station["vibration"] = clamp(
-        station["vibration"],
-        0.5,
-        5.0
-    )
-
-    # --------------------------------------------------------
-    # Energy
-    # --------------------------------------------------------
-
-    station["energy"] += (
-        energy_difference * 0.01
-        + np.random.normal(0, 0.5)
-    )
-
-    station["energy"] = clamp(
-        station["energy"],
-        0.0,
-        1000.0
-    )
-
-    # --------------------------------------------------------
-    # Apply anomaly
-    # IMPORTANT:
-    # No anomaly information is added to the JSON.
-    # --------------------------------------------------------
-
-    if active_anomaly == "GENERATOR_LOAD_SPIKE":
-
-        station["generator_load"] = np.random.uniform(
-            90.0,
-            100.0
-        )
-
-        station["power_generation"] = (
-            station["generator_load"] * 1.20
-            + np.random.normal(0, 2)
-        )
-
-        station["power_generation"] = clamp(
-            station["power_generation"],
-            20.0,
-            120.0
-        )
-
-    elif active_anomaly == "POWER_GENERATION_DROP":
-
-        station["power_generation"] = np.random.uniform(
-            20.0,
-            40.0
-        )
-
-    elif active_anomaly == "POWER_CONSUMPTION_SPIKE":
-
-        station["power_consumption"] = np.random.uniform(
-            100.0,
-            140.0
-        )
-
-    elif active_anomaly == "HEATING_SURGE":
-
-        station["heating"] = np.random.uniform(
-            65.0,
-            95.0
-        )
-
-        # Heating increases power consumption
-        station["power_consumption"] += np.random.uniform(
-            10.0,
-            25.0
-        )
-
-    elif active_anomaly == "PUMP_FAILURE":
-
-        station["pump_status"] = 0
-
-    elif active_anomaly == "HIGH_VIBRATION":
-
-        station["vibration"] = np.random.uniform(
-            7.0,
-            12.0
-        )
-
-    # --------------------------------------------------------
-    # Update runtime
-    # --------------------------------------------------------
-
-    station["runtime"] += 1
-
-    # --------------------------------------------------------
-    # Decrease anomaly duration
-    # --------------------------------------------------------
-
-    if active_anomaly is not None:
-
-        anomaly_remaining -= 1
-
-        if anomaly_remaining <= 0:
-
-            active_anomaly = None
-            anomaly_remaining = 0
-
-    # --------------------------------------------------------
-    # Inventory Simulation (Food & Medicine)
-    # --------------------------------------------------------
-    
-    # Calculate simulated days passed in this tick
-    days_passed = SIMULATION_TIME_MULTIPLIER / (24.0 * 60.0)
-
-    # Food consumption
-    station["food_stock_kg"] -= station["food_consumption_daily_kg"] * days_passed
-    station["food_stock_kg"] = max(0.0, station["food_stock_kg"])
-    
-    food_days_remaining = 0
-    if station["food_consumption_daily_kg"] > 0:
-        food_days_remaining = int(station["food_stock_kg"] / station["food_consumption_daily_kg"])
-
-    if food_days_remaining > 60:
-        food_status = "NORMAL"
-    elif food_days_remaining > 30:
-        food_status = "LOW"
-    else:
-        food_status = "CRITICAL"
-
-    # Medicine consumption (event based probability)
-    # small event
-    if np.random.random() < (0.5 * days_passed):
-        station["medicine_stock_units"] -= np.random.randint(1, 5)
-    # emergency event
-    if np.random.random() < (0.05 * days_passed):
-        station["medicine_stock_units"] -= np.random.randint(10, 30)
-    
-    station["medicine_stock_units"] = max(0.0, station["medicine_stock_units"])
-
-    medicine_days_remaining = 0
-    if station["medicine_consumption_daily"] > 0:
-        medicine_days_remaining = int(station["medicine_stock_units"] / station["medicine_consumption_daily"])
-
-    if medicine_days_remaining <= 30 or station["critical_medicine_items"] > 0:
-        medicine_status = "CRITICAL"
-    elif medicine_days_remaining <= 60 or station["low_medicine_items"] > 0:
-        medicine_status = "LOW"
-    else:
-        medicine_status = "NORMAL"
-
-    # --------------------------------------------------------
-    # Network status simulation
-    # --------------------------------------------------------
-    # Injected communication_loss overrides network mode
-    if injected_anomaly is not None and injected_anomaly["type"] == "communication_loss":
-        net_status = "DEGRADED"
-        net_bandwidth = round(float(np.random.uniform(1.0, 5.0)), 1)
-        net_latency = int(np.random.randint(400, 900))
-        pkt_loss = round(float(np.random.uniform(8.0, 25.0)), 1)
-        sig_strength = int(np.random.randint(15, 35))
-        injected_anomaly["readings"].append(net_bandwidth)
-    else:
-        current_net_mode = os.environ.get("NETWORK_MODE", NETWORK_MODE)
-        if current_net_mode == "SLOW":
-            net_status = "SLOW"
-            net_bandwidth = round(float(np.random.uniform(5.5, 9.5)), 1)
-            net_latency = int(np.random.randint(250, 450))
-            pkt_loss = round(float(np.random.uniform(3.0, 8.0)), 1)
-            sig_strength = int(np.random.randint(45, 65))
-        else:
-            net_status = "NORMAL"
-            net_bandwidth = round(float(np.random.uniform(75.0, 92.0)), 1)
-            net_latency = int(np.random.randint(50, 80))
-            pkt_loss = round(float(np.random.uniform(0.2, 1.2)), 1)
-            sig_strength = int(np.random.randint(88, 98))
-
-    # --------------------------------------------------------
-    # Create JSON object
-    # --------------------------------------------------------
-
-    data = {
-        "timestamp": simulation_time.strftime(
-            "%Y-%m-%d %H:%M:%S"
-        ),
-        "energy": round(station["energy"], 2),
-        "generator_load": round(station["generator_load"], 2),
-        "power_generation": round(
-            station["power_generation"],
-            2
-        ),
-        "power_consumption": round(
-            station["power_consumption"],
-            2
-        ),
-        "fuel_level": round(
-            station["fuel_level"],
-            2
-        ),
-        "battery_soc": round(
-            station["battery_soc"],
-            2
-        ),
-        "heating": round(
-            station["heating"],
-            2
-        ),
-        "generator_health": round(
-            station["generator_health"],
-            2
-        ),
-        "pump_status": int(
-            station["pump_status"]
-        ),
-        "equipment_temperature": round(
-            station["equipment_temperature"],
-            2
-        ),
-        "vibration": round(
-            station["vibration"],
-            2
-        ),
-        "runtime": station["runtime"],
-        "network_status": net_status,
-        "network_bandwidth": net_bandwidth,
-        "network_latency": net_latency,
-        "packet_loss": pkt_loss,
-        "signal_strength": sig_strength,
-        "food_stock_kg": int(station["food_stock_kg"]),
-        "food_days_remaining": food_days_remaining,
-        "food_consumption_daily_kg": station["food_consumption_daily_kg"],
-        "food_storage_temperature": station["food_storage_temperature"],
-        "food_status": food_status,
-        "food_expiry_risk": station["food_expiry_risk"],
-        "medicine_stock_units": int(station["medicine_stock_units"]),
-        "medicine_days_remaining": medicine_days_remaining,
-        "medicine_consumption_daily": station["medicine_consumption_daily"],
-        "critical_medicine_items": station["critical_medicine_items"],
-        "low_medicine_items": station["low_medicine_items"],
-        "medicine_expiry_risk": station["medicine_expiry_risk"],
-        "medicine_storage_temperature": station["medicine_storage_temperature"],
-        "medicine_status": medicine_status
-    }
-
-    return data
-
-
-# ============================================================
-# SIMULATION START TIME & THREAD-SAFE STATE
-# ============================================================
-
-simulation_time = datetime.now()
-latest_data = {}
-telemetry_history = deque(maxlen=20)   # rolling buffer for AI context
-data_lock = threading.Lock()
-
-
-# ============================================================
-# BACKGROUND SIMULATION WORKER
-# ============================================================
 
 def run_simulator_background():
-    """Continuously runs the simulation loop in a background thread."""
-    global simulation_time, latest_data
-    while True:
-        try:
-            data = generate_data()
-
-            # Safely update latest_data for API consumers
-            with data_lock:
-                latest_data = data
-                telemetry_history.append(data)
-
-            # ONLY JSON IS PRINTED TO THE TERMINAL (preserves existing behavior)
-            print(
-                json.dumps(
-                    data,
-                    separators=(",", ":")
-                ),
-                flush=True
-            )
-
-            # Move simulated timestamp forward
-            simulation_time += timedelta(minutes=SIMULATION_TIME_MULTIPLIER)
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"Simulator error in background thread: {e}", flush=True)
-
-        # Wait before generating next record
-        time.sleep(INTERVAL_SECONDS)
+    global latest_data
+    try:
+        while True:
+            if simulator_running.is_set():
+                for station_id, station_core in cores.items():
+                    data = station_core.tick().to_api_dict()
+                    with data_lock:
+                        latest_data[station_id] = data
+                        telemetry_history[station_id].append(data)
+                    print(json.dumps(data, separators=(",", ":")), flush=True)
+            time.sleep(config.interval_seconds)
+    except Exception as e:
+        print(f"Simulator error in background thread: {e}", flush=True)
 
 
 # ============================================================
@@ -560,58 +139,413 @@ def run_simulator_background():
 # ============================================================
 
 app = Flask(__name__)
-# Enable CORS for all routes so frontend dev server can query the API
 CORS(app)
+app.config["SWAGGER"] = {"title": "PolarSync Simulator API", "uiversion": 3}
+swagger = Swagger(app)
 
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    """Health check endpoint."""
+    """Health check endpoint.
+    ---
+    responses:
+      200:
+        description: Service is up
+    """
     return jsonify({"status": "ok"})
 
 
 @app.route("/api/network/mode", methods=["GET", "POST"])
 def set_network_mode():
-    """Endpoint to inspect or toggle network mode (NORMAL / SLOW)."""
-    global NETWORK_MODE
+    """Inspect or toggle network mode (NORMAL / SLOW).
+    ---
+    parameters:
+      - name: mode
+        in: query
+        type: string
+        enum: [NORMAL, SLOW]
+        required: false
+    responses:
+      200:
+        description: Current or updated network mode
+    """
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         mode = data.get("mode") or request.args.get("mode")
         if mode in ["NORMAL", "SLOW"]:
-            NETWORK_MODE = mode
-            return jsonify({"status": "ok", "network_mode": NETWORK_MODE})
+            config.network_mode = mode
+            return jsonify({"status": "ok", "network_mode": config.network_mode})
     mode = request.args.get("mode")
     if mode in ["NORMAL", "SLOW"]:
-        NETWORK_MODE = mode
-        return jsonify({"status": "ok", "network_mode": NETWORK_MODE})
-    return jsonify({"network_mode": NETWORK_MODE})
+        config.network_mode = mode
+        return jsonify({"status": "ok", "network_mode": config.network_mode})
+    return jsonify({"network_mode": config.network_mode})
 
 
 @app.route("/api/data", methods=["GET"])
 def get_data():
-    """Returns the latest Antarctic station telemetry JSON."""
-    global latest_data
+    """Latest telemetry snapshot for a station.
+    ---
+    parameters:
+      - name: station
+        in: query
+        type: string
+        enum: [MAITRI, BHARATI]
+        required: false
+        default: MAITRI
+    responses:
+      200:
+        description: Latest telemetry
+      400:
+        description: Unknown station
+    """
+    result = _parse_station()
+    if result[1] is not None:
+        return result[1], result[2]
+    station_id = result[0]
+
     with data_lock:
-        if not latest_data:
-            latest_data = generate_data()
-        return jsonify(latest_data)
+        if not latest_data[station_id]:
+            latest_data[station_id] = cores[station_id].tick().to_api_dict()
+        return jsonify(latest_data[station_id])
 
 
 @app.route("/api/telemetry/history", methods=["GET"])
 def get_telemetry_history():
-    """Returns recent telemetry history for trend analysis."""
+    """Recent telemetry history for one station (bug fix: previously
+    returned dict keys instead of history due to list(dict) on a
+    station-keyed structure).
+    ---
+    parameters:
+      - name: station
+        in: query
+        type: string
+        enum: [MAITRI, BHARATI]
+        required: false
+        default: MAITRI
+    responses:
+      200:
+        description: List of recent telemetry snapshots, oldest first
+      400:
+        description: Unknown station
+    """
+    result = _parse_station()
+    if result[1] is not None:
+        return result[1], result[2]
+    station_id = result[0]
+
     with data_lock:
-        return jsonify(list(telemetry_history))
+        return jsonify(list(telemetry_history[station_id]))
+
+
+@app.route("/telemetry/<domain>/latest", methods=["GET"])
+def get_domain_telemetry(domain):
+    """Latest telemetry for one domain (environment / energy / infrastructure / logistics).
+    ---
+    parameters:
+      - name: domain
+        in: path
+        type: string
+        enum: [environment, energy, infrastructure, logistics]
+        required: true
+      - name: station
+        in: query
+        type: string
+        enum: [MAITRI, BHARATI]
+        required: false
+        default: MAITRI
+    responses:
+      200:
+        description: Latest telemetry filtered to one domain
+      400:
+        description: Unknown station or domain
+    """
+    if domain not in DOMAIN_FIELDS:
+        return jsonify({"error": f"Unknown domain '{domain}'. Known: {list(DOMAIN_FIELDS.keys())}"}), 400
+    result = _parse_station()
+    if result[1] is not None:
+        return result[1], result[2]
+    station_id = result[0]
+
+    with data_lock:
+        if not latest_data[station_id]:
+            latest_data[station_id] = cores[station_id].tick().to_api_dict()
+        full = latest_data[station_id]
+        filtered = {k: full[k] for k in DOMAIN_FIELDS[domain] if k in full}
+        return jsonify(filtered)
+
+
+@app.route("/simulator/status", methods=["GET"])
+def simulator_status():
+    """Whether the simulator is running, plus per-station simulated time and active scenarios.
+    ---
+    responses:
+      200:
+        description: Simulator status
+    """
+    with data_lock:
+        stations = {}
+        for sid, core in cores.items():
+            stations[sid.value] = {
+                "simulation_time": latest_data[sid].get("timestamp"),
+                "active_scenarios": core.get_active_scenarios(),
+            }
+    return jsonify({"running": simulator_running.is_set(), "stations": stations})
+
+
+@app.route("/simulator/start", methods=["POST"])
+def simulator_start():
+    """Resume ticking (station state is preserved, not reset).
+    ---
+    responses:
+      200:
+        description: Simulator resumed
+    """
+    simulator_running.set()
+    return jsonify({"status": "ok", "running": True})
+
+
+@app.route("/simulator/stop", methods=["POST"])
+def simulator_stop():
+    """Pause ticking (station state is preserved, not destroyed).
+    ---
+    responses:
+      200:
+        description: Simulator paused
+    """
+    simulator_running.clear()
+    return jsonify({"status": "ok", "running": False})
+
+
+@app.route("/scenario/start", methods=["POST"])
+def scenario_start():
+    """Start a deterministic scenario on a station.
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            station:
+              type: string
+              enum: [MAITRI, BHARATI]
+            type:
+              type: string
+              enum: [EXTREME_COLD, EXTREME_WIND, PRESSURE_DROP, HUMIDITY_ANOMALY, GENERATOR_FAILURE, COMMUNICATION_FAILURE]
+            duration_ticks:
+              type: integer
+              default: 30
+    responses:
+      200:
+        description: Scenario started
+      400:
+        description: Unknown station, unknown scenario type, or invalid duration
+    """
+    body = request.get_json(silent=True) or {}
+    result = _parse_station()
+    if result[1] is not None:
+        return result[1], result[2]
+    station_id = result[0]
+
+    scenario_type = (body.get("type") or "").upper()
+    duration_ticks = body.get("duration_ticks", 30)
+
+    with data_lock:
+        try:
+            cores[station_id].start_scenario(scenario_type, duration_ticks)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+    return jsonify({
+        "status": "ok",
+        "station": station_id.value,
+        "scenario_started": scenario_type,
+        "duration_ticks": duration_ticks,
+    })
+
+
+@app.route("/scenario/stop", methods=["POST"])
+def scenario_stop():
+    """Stop a specific scenario, or all active scenarios if type is omitted.
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            station:
+              type: string
+              enum: [MAITRI, BHARATI]
+            type:
+              type: string
+              enum: [EXTREME_COLD, EXTREME_WIND, PRESSURE_DROP, HUMIDITY_ANOMALY, GENERATOR_FAILURE, COMMUNICATION_FAILURE]
+    responses:
+      200:
+        description: Scenario(s) stopped
+      400:
+        description: Unknown station
+    """
+    body = request.get_json(silent=True) or {}
+    result = _parse_station()
+    if result[1] is not None:
+        return result[1], result[2]
+    station_id = result[0]
+
+    scenario_type = body.get("type")
+    with data_lock:
+        if scenario_type:
+            cores[station_id].stop_scenario(scenario_type.upper())
+        else:
+            cores[station_id].stop_all_scenarios()
+
+    return jsonify({"status": "ok", "station": station_id.value, "stopped": scenario_type or "ALL"})
+
+
+@app.route("/scenario/status", methods=["GET"])
+def scenario_status():
+    """Active scenarios and remaining ticks for a station.
+    ---
+    parameters:
+      - name: station
+        in: query
+        type: string
+        enum: [MAITRI, BHARATI]
+        required: false
+        default: MAITRI
+    responses:
+      200:
+        description: Active scenarios
+      400:
+        description: Unknown station
+    """
+    result = _parse_station()
+    if result[1] is not None:
+        return result[1], result[2]
+    station_id = result[0]
+
+    with data_lock:
+        active = cores[station_id].get_active_scenarios()
+    return jsonify({"station": station_id.value, "active_scenarios": active})
+
+
+@app.route("/scenario/presets", methods=["GET"])
+def scenario_presets():
+    """List available named scenario presets.
+    ---
+    responses:
+      200:
+        description: Preset definitions
+    """
+    return jsonify(SCENARIO_PRESETS)
+
+
+@app.route("/scenario/preset/start", methods=["POST"])
+def scenario_preset_start():
+    """Start a named preset scenario on a station.
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            station:
+              type: string
+              enum: [MAITRI, BHARATI]
+            preset:
+              type: string
+    responses:
+      200:
+        description: Preset started
+      400:
+        description: Unknown station or preset name
+    """
+    body = request.get_json(silent=True) or {}
+    result = _parse_station()
+    if result[1] is not None:
+        return result[1], result[2]
+    station_id = result[0]
+
+    preset_name = body.get("preset")
+    preset = SCENARIO_PRESETS.get(preset_name)
+    if preset is None:
+        return jsonify({"error": f"Unknown preset '{preset_name}'. Known: {list(SCENARIO_PRESETS.keys())}"}), 400
+
+    with data_lock:
+        cores[station_id].start_scenario(preset["type"], preset["duration_ticks"])
+
+    return jsonify({"status": "ok", "station": station_id.value, "preset": preset_name, **preset})
+
+
+@app.route("/demo/snapshot", methods=["GET"])
+def demo_snapshot():
+    """Full demo-ready snapshot: telemetry by domain, active scenario, and alerts, for one station.
+    ---
+    parameters:
+      - name: station
+        in: query
+        type: string
+        enum: [MAITRI, BHARATI]
+        required: false
+        default: MAITRI
+    responses:
+      200:
+        description: Full snapshot
+      400:
+        description: Unknown station
+    """
+    result = _parse_station()
+    if result[1] is not None:
+        return result[1], result[2]
+    station_id = result[0]
+
+    with data_lock:
+        if not latest_data[station_id]:
+            latest_data[station_id] = cores[station_id].tick().to_api_dict()
+        d = latest_data[station_id]
+        active_scenarios = cores[station_id].get_active_scenarios()
+
+    snapshot = {
+        "station": station_id.value,
+        "simulation_time": d.get("timestamp"),
+        "simulator_running": simulator_running.is_set(),
+        "active_scenarios": active_scenarios,
+        "environment": {k: d[k] for k in DOMAIN_FIELDS["environment"] if k in d},
+        "energy": {k: d[k] for k in DOMAIN_FIELDS["energy"] if k in d},
+        "infrastructure": {k: d[k] for k in DOMAIN_FIELDS["infrastructure"] if k in d},
+        "logistics": {k: d[k] for k in DOMAIN_FIELDS["logistics"] if k in d},
+        "alerts": compute_alerts(d),
+    }
+    return jsonify(snapshot)
 
 
 @app.route("/api/alerts/analyze", methods=["POST"])
 def analyze_alert_endpoint():
     """AI-powered alert analysis via local Ollama.
-
-    Expects JSON body:
-      { "alert_id": "low_battery", "alert_message": "LOW BATTERY RESERVE", "severity": "critical" }
-
-    Returns structured AI analysis or error.
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            alert_id:
+              type: string
+            alert_message:
+              type: string
+            severity:
+              type: string
+    responses:
+      200:
+        description: AI analysis
+      503:
+        description: AI service unavailable
     """
     try:
         from ollama_service import analyze_alert
@@ -630,12 +564,10 @@ def analyze_alert_endpoint():
     alert_message = req.get("alert_message",  "Unknown alert")
     severity      = req.get("severity",       "unknown")
 
-    # Build alert context from current state
     with data_lock:
-        current = dict(latest_data) if latest_data else {}
-        history_list = list(telemetry_history)
+        current = dict(latest_data.get(StationID.MAITRI, {}))
+        history_list = list(telemetry_history[StationID.MAITRI])
 
-    # Select relevant telemetry fields for the context
     relevant_keys = [
         "energy", "generator_load", "power_generation", "power_consumption",
         "fuel_level", "battery_soc", "heating", "generator_health",
@@ -643,7 +575,6 @@ def analyze_alert_endpoint():
     ]
     current_telem = {k: current.get(k) for k in relevant_keys if current.get(k) is not None}
 
-    # Build compact history (only relevant fields, last 10 entries)
     recent = []
     for snap in history_list[-10:]:
         entry = {k: snap.get(k) for k in relevant_keys if snap.get(k) is not None}
@@ -651,13 +582,9 @@ def analyze_alert_endpoint():
 
     alert_context = {
         "station": "Maitri",
-        "alert": {
-            "type":     alert_id,
-            "message":  alert_message,
-            "severity": severity,
-        },
+        "alert": {"type": alert_id, "message": alert_message, "severity": severity},
         "current_telemetry": current_telem,
-        "recent_telemetry":  recent,
+        "recent_telemetry": recent,
     }
 
     result = analyze_alert(alert_context)
@@ -666,15 +593,13 @@ def analyze_alert_endpoint():
 
 
 if __name__ == "__main__":
-    # Start the simulator in a background daemon thread
     sim_thread = threading.Thread(target=run_simulator_background, daemon=True)
     sim_thread.start()
 
-    # Allow a brief moment for the initial data point to be generated
     time.sleep(0.1)
 
-    print(f"* Antarctic Data Simulator background thread started (INTERVAL_SECONDS={INTERVAL_SECONDS}s)")
+    print(f"* Antarctic Data Simulator background thread started (INTERVAL_SECONDS={config.interval_seconds}s)")
     print("* Starting Flask API server on http://127.0.0.1:5000")
+    print("* Swagger UI available at http://127.0.0.1:5000/apidocs")
 
-    # Run Flask server (debug=False ensures single background thread)
     app.run(host="0.0.0.0", port=5000, debug=False)
