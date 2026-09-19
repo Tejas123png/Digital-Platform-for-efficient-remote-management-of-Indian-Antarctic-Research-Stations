@@ -58,8 +58,10 @@ export default function Header({
         <div className="ps-station-id">
           <span className="ps-station-id__flag">🇮🇳</span>
           <div>
-            <div className="ps-station-id__name">{STATION_CONFIG.name}</div>
-            <div className="ps-station-id__sub">{STATION_CONFIG.location}</div>
+            <div className="ps-station-id__name">{activeStation === 'BHARATI' ? 'BHARATI' : STATION_CONFIG.name}</div>
+            <div className="ps-station-id__sub">
+              {activeStation === 'BHARATI' ? 'Larsemann Hills, Antarctica' : STATION_CONFIG.location}
+            </div>
           </div>
         </div>
 
@@ -67,11 +69,9 @@ export default function Header({
           {['MAITRI', 'BHARATI'].map((s) => (
             <button
               key={s}
-              className={`ps-station-btn ${
-                activeStation === s ? 'active' : s === 'BHARATI' ? 'inactive' : ''
-              }`}
-              onClick={() => s !== 'BHARATI' && onStationChange(s)}
-              title={s === 'BHARATI' ? 'Coming soon' : s}
+              className={`ps-station-btn ${activeStation === s ? 'active' : ''}`}
+              onClick={() => onStationChange(s)}
+              title={`Switch to ${s} station`}
             >
               {s}
             </button>

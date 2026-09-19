@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 import Header        from './components/Header';
 import LeftPanel     from './components/LeftPanel';
-import DigitalTwin   from './components/DigitalTwin';
+import DigitalTwin        from './components/DigitalTwin';
+import BharatiDigitalTwin from './components/BharatiDigitalTwin';
 import RoomInfoPanel from './components/RoomInfoPanel';
 import AlertPanel    from './components/AlertPanel';
 import WeatherPanel  from './components/WeatherPanel';
@@ -70,7 +71,7 @@ export default function App() {
 
   const poll = useCallback(async () => {
     try {
-      const data = await fetchStationData();
+      const data = await fetchStationData(activeStation);
       if (!data) return;
 
       setStationData(data);
@@ -96,13 +97,21 @@ export default function App() {
     } catch (err) {
       setConnectionStatus('disconnected');
     }
-  }, []);
+  }, [activeStation]);
 
   useEffect(() => {
     poll();
     const timer = setInterval(poll, POLL_INTERVAL);
     return () => clearInterval(timer);
   }, [poll]);
+
+  const handleStationChange = useCallback((station) => {
+    setActiveStation(station);
+    setSelectedRoom(null);
+    setHistory([]);
+    setLogs([]);
+    prevDataRef.current = null;
+  }, []);
 
   const handleRoomSelect = useCallback((roomId) => {
     setSelectedRoom(roomId);
@@ -122,7 +131,7 @@ export default function App() {
         connectionStatus={connectionStatus}
         lastUpdated={stationData?.timestamp}
         activeStation={activeStation}
-        onStationChange={setActiveStation}
+        onStationChange={handleStationChange}
         networkBandwidth={stationData?.network_bandwidth}
         networkStatus={stationData?.network_status}
       />
@@ -131,17 +140,26 @@ export default function App() {
         {/* LEFT PANEL */}
         <div className="ps-left">
           <LeftPanel data={stationData} />
-          <WeatherPanel />
+          <WeatherPanel station={activeStation} />
         </div>
 
         {/* CENTER — Digital Twin */}
         <div className="ps-center">
-          <DigitalTwin
-            stationData={stationData}
-            selectedRoom={selectedRoom}
-            onRoomSelect={handleRoomSelect}
-            alerts={alerts}
-          />
+          {activeStation === 'BHARATI' ? (
+            <BharatiDigitalTwin
+              stationData={stationData}
+              selectedRoom={selectedRoom}
+              onRoomSelect={handleRoomSelect}
+              alerts={alerts}
+            />
+          ) : (
+            <DigitalTwin
+              stationData={stationData}
+              selectedRoom={selectedRoom}
+              onRoomSelect={handleRoomSelect}
+              alerts={alerts}
+            />
+          )}
         </div>
 
         {/* RIGHT PANEL — Alerts + Room Inspector */}

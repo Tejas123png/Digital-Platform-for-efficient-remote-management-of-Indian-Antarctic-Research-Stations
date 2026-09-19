@@ -189,6 +189,112 @@ export const STATION_ROOMS = [
       return 'normal';
     },
   },
+  // ── BHARATI SPECIFIC ZONES ──────────────────────────────────────
+  {
+    id: 'comms',
+    name: 'Communication Room',
+    shortName: 'Comms',
+    category: 'operations',
+    icon: '📡',
+    description: 'Radome, satellite tracking terminal, VHF/HF transceiver, and antenna mast',
+    telemetryFields: [
+      'communication_equipment_status',
+      'communication_equipment_health',
+      'network_status',
+      'network_bandwidth',
+      'network_latency',
+      'packet_loss',
+      'signal_strength',
+    ],
+    statusLogic: (data) => {
+      if (!data) return 'unknown';
+      if (data.communication_equipment_status === 'OFFLINE') return 'critical';
+      if (data.communication_equipment_status === 'DEGRADED' || data.network_status === 'SLOW') return 'warning';
+      return 'normal';
+    },
+  },
+  {
+    id: 'entrance',
+    name: 'Main Entrance',
+    shortName: 'Entrance',
+    category: 'operations',
+    icon: '🚪',
+    description: 'Central pressurized airlock, decontamination foyer, and weather telemetry',
+    telemetryFields: ['temperature', 'wind_speed', 'air_pressure', 'humidity', 'critical_systems_powered'],
+    statusLogic: (data) => {
+      if (!data) return 'unknown';
+      if (data.critical_systems_powered === false) return 'critical';
+      if (data.wind_speed > 100 || data.temperature < -40) return 'warning';
+      return 'normal';
+    },
+  },
+  {
+    id: 'dining',
+    name: 'Dining / Recreation',
+    shortName: 'Dining',
+    category: 'habitat',
+    icon: '🍽️',
+    description: 'Expedition mess hall, galley, and fresh food cold storage tracking',
+    telemetryFields: ['food_stock_kg', 'food_days_remaining', 'food_consumption_daily_kg', 'food_storage_temperature', 'food_status'],
+    statusLogic: (data) => {
+      if (!data) return 'unknown';
+      if (data.food_status === 'CRITICAL') return 'critical';
+      if (data.food_status === 'LOW') return 'warning';
+      return 'normal';
+    },
+  },
+  {
+    id: 'fuel_storage_building',
+    name: 'Fuel Storage (Building)',
+    shortName: 'Fuel Bunker',
+    category: 'energy',
+    icon: '🛢️',
+    description: 'Sub-surface primary bulk fuel bunker and distribution pumping station',
+    telemetryFields: ['generator_fuel_reserve_l', 'generator_fuel_reserve_days_remaining', 'fuel_level', 'resupply_risk'],
+    statusLogic: (data) => {
+      if (!data) return 'unknown';
+      if (data.resupply_risk === 'CRITICAL' || data.fuel_level < 15) return 'critical';
+      if (data.resupply_risk === 'ELEVATED' || data.fuel_level < 35) return 'warning';
+      return 'normal';
+    },
+  },
+  {
+    id: 'fuel_storage_tanks',
+    name: 'Fuel Storage (Tanks)',
+    shortName: 'Fuel Tanks',
+    category: 'energy',
+    icon: '⛽',
+    description: 'External day fuel storage tanks and active feed lines to generators',
+    telemetryFields: ['fuel_level', 'generator_fuel_reserve_l', 'generator_fuel_reserve_days_remaining'],
+    statusLogic: (data) => {
+      if (!data) return 'unknown';
+      if (data.fuel_level < 20) return 'critical';
+      if (data.fuel_level < 40) return 'warning';
+      return 'normal';
+    },
+  },
+  {
+    id: 'store',
+    name: 'Store',
+    shortName: 'Store',
+    category: 'logistics',
+    icon: '📦',
+    description: 'Pharmaceutical cold store, medical equipment, and critical replacement spares',
+    telemetryFields: [
+      'medicine_stock_units',
+      'medicine_days_remaining',
+      'medicine_consumption_daily',
+      'medicine_storage_temperature',
+      'medicine_status',
+      'resupply_risk',
+    ],
+    statusLogic: (data) => {
+      if (!data) return 'unknown';
+      if (data.medicine_status === 'CRITICAL') return 'critical';
+      if (data.medicine_status === 'LOW') return 'warning';
+      return 'normal';
+    },
+  },
 ];
 
 export const TELEMETRY_LABELS = {
@@ -217,6 +323,23 @@ export const TELEMETRY_LABELS = {
   low_medicine_items: { label: 'Low Meds', unit: 'items', precision: 0 },
   medicine_storage_temperature: { label: 'Medicine Storage Temp', unit: '°C', precision: 1 },
   medicine_status: { label: 'Medicine Status', unit: '', precision: 0 },
+  communication_equipment_status: { label: 'Comms Status', unit: '' },
+  communication_equipment_health: { label: 'Comms Health', unit: '%', precision: 1, max: 100 },
+  network_status: { label: 'Network Mode', unit: '' },
+  network_bandwidth: { label: 'Bandwidth', unit: 'Mbps', precision: 1 },
+  network_latency: { label: 'Latency', unit: 'ms', precision: 0 },
+  packet_loss: { label: 'Packet Loss', unit: '%', precision: 1 },
+  signal_strength: { label: 'Signal Strength', unit: '%', precision: 0 },
+  generator_fuel_reserve_l: { label: 'Bulk Fuel Reserve', unit: 'L', precision: 0 },
+  generator_fuel_reserve_days_remaining: { label: 'Fuel Reserve Days', unit: 'days', precision: 0 },
+  resupply_risk: { label: 'Resupply Risk', unit: '' },
+  critical_systems_powered: { label: 'Critical Power', unit: '', isBool: true },
+  backup_heater_health: { label: 'Backup Heater Health', unit: '%', precision: 1, max: 100 },
+  backup_heater_active: { label: 'Backup Heater', unit: '', isBool: true },
+  temperature: { label: 'Ambient Temp', unit: '°C', precision: 1 },
+  wind_speed: { label: 'Wind Speed', unit: 'km/h', precision: 1 },
+  air_pressure: { label: 'Air Pressure', unit: 'hPa', precision: 1 },
+  humidity: { label: 'Humidity', unit: '%', precision: 1 },
 };
 
 export const ALERT_RULES = [

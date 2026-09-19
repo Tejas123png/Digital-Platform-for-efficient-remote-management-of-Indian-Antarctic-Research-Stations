@@ -9,10 +9,11 @@ export { API_URL };
 
 /**
  * Fetch the latest telemetry snapshot from Flask API
+ * @param {string} [station="MAITRI"] - Station identifier (MAITRI or BHARATI)
  * @returns {Promise<Object>} Telemetry record
  */
-export async function fetchStationData() {
-  const response = await fetch(`${API_URL}/api/data`, {
+export async function fetchStationData(station = "MAITRI") {
+  const response = await fetch(`${API_URL}/api/data?station=${station}`, {
     method: "GET",
     headers: {
       "Accept": "application/json"
@@ -27,6 +28,14 @@ export async function fetchStationData() {
 }
 
 export const getStationData = fetchStationData;
+
+/**
+ * Fetch the latest telemetry snapshot specifically for Bharati station
+ * @returns {Promise<Object>} Telemetry record for Bharati
+ */
+export async function fetchBharatiData() {
+  return fetchStationData("BHARATI");
+}
 
 /**
  * Check if the Flask API server is alive

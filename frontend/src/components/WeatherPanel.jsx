@@ -5,7 +5,7 @@ import WeatherCharts from './WeatherCharts';
 import WindCompass from './WindCompass';
 import WeatherSummary from './WeatherSummary';
 
-export default function WeatherPanel() {
+export default function WeatherPanel({ station = 'MAITRI' }) {
   const [data, setData] = useState(null);
   const [timeRange, setTimeRange] = useState('24H');
   const [loading, setLoading] = useState(true);
@@ -13,7 +13,7 @@ export default function WeatherPanel() {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    fetchWeatherData('MAITRI', timeRange).then(res => {
+    fetchWeatherData(station, timeRange).then(res => {
       if (mounted) {
         setData(res);
         setLoading(false);
@@ -23,13 +23,13 @@ export default function WeatherPanel() {
       if (mounted) setLoading(false);
     });
     return () => { mounted = false; };
-  }, [timeRange]);
+  }, [station, timeRange]);
 
   if (loading && !data) {
     return (
       <div className="ps-weather">
-        <div className="ps-section-title">MAITRI WEATHER</div>
-        <div className="ps-weather__loading">Loading Maitri weather data...</div>
+        <div className="ps-section-title">{station} WEATHER</div>
+        <div className="ps-weather__loading">Loading {station} weather data...</div>
       </div>
     );
   }
@@ -37,9 +37,9 @@ export default function WeatherPanel() {
   if (!data) {
     return (
       <div className="ps-weather">
-        <div className="ps-section-title">MAITRI WEATHER</div>
+        <div className="ps-section-title">{station} WEATHER</div>
         <div className="ps-weather__empty">
-          Weather data unavailable.<br/>Unable to load Maitri station observations.
+          Weather data unavailable.<br/>Unable to load {station} station observations.
         </div>
       </div>
     );
@@ -56,7 +56,7 @@ export default function WeatherPanel() {
     <div className="ps-weather">
       <div className="ps-weather-header">
         <div>
-          <div className="ps-weather-station-title">MAITRI STATION</div>
+          <div className="ps-weather-station-title">{station} STATION</div>
          
         </div>
         <div className="ps-weather-latest-obs">

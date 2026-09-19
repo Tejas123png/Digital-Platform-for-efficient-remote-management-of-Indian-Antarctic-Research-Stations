@@ -1,0 +1,187 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1392 783" width="1392" height="783" style="background:#070d18; font-family: 'JetBrains Mono', 'Segoe UI', monospace;">
+  <defs>
+    <!-- Blueprint Grids -->
+    <pattern id="smallGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#0e1f38" stroke-width="0.75"/>
+    </pattern>
+    <pattern id="majorGrid" width="100" height="100" patternUnits="userSpaceOnUse">
+      <rect width="100" height="100" fill="url(#smallGrid)"/>
+      <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#163259" stroke-width="1.2"/>
+    </pattern>
+    <!-- Gradients -->
+    <linearGradient id="hullGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e2340" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#081527" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="roomGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#122d52" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#0a1a30" stop-opacity="0.7"/>
+    </linearGradient>
+    <linearGradient id="utilGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#163e5c" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#0d243a" stop-opacity="0.8"/>
+    </linearGradient>
+    <linearGradient id="powerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3d2812" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#1f1409" stop-opacity="0.8"/>
+    </linearGradient>
+    <!-- Glow Filters -->
+    <filter id="cyanGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background Grid -->
+  <rect width="1392" height="783" fill="#070d18"/>
+  <rect width="1392" height="783" fill="url(#majorGrid)"/>
+
+  <!-- Blueprint Outer Border & Corners -->
+  <rect x="18" y="18" width="1356" height="747" fill="none" stroke="#1e4273" stroke-width="1.5"/>
+  <rect x="24" y="24" width="1344" height="735" fill="none" stroke="#122744" stroke-width="1"/>
+  
+  <!-- Corner Tech Brackets -->
+  <path d="M 20 50 L 20 20 L 50 20" fill="none" stroke="#388bfd" stroke-width="2"/>
+  <path d="M 1372 50 L 1372 20 L 1342 20" fill="none" stroke="#388bfd" stroke-width="2"/>
+  <path d="M 20 733 L 20 763 L 50 763" fill="none" stroke="#388bfd" stroke-width="2"/>
+  <path d="M 1372 733 L 1372 763 L 1342 763" fill="none" stroke="#388bfd" stroke-width="2"/>
+
+  <!-- Blueprint Header Title Block -->
+  <g id="header-block">
+    <rect x="40" y="32" width="620" height="38" fill="#0a182d" stroke="#1f4b82" stroke-width="1" rx="3"/>
+    <text x="55" y="50" fill="#58a6ff" font-size="13" font-weight="700" letter-spacing="1.5">BHARATI RESEARCH STATION — 2D DIGITAL TWIN BLUEPRINT</text>
+    <text x="55" y="63" fill="#7d8590" font-size="9" letter-spacing="0.8">NATIONAL CENTRE FOR POLAR AND OCEAN RESEARCH (NCPOR) • 69°24′29″S 76°11′14″E</text>
+
+    <rect x="1060" y="32" width="292" height="38" fill="#0a182d" stroke="#1f4b82" stroke-width="1" rx="3"/>
+    <text x="1075" y="49" fill="#3fb950" font-size="11" font-weight="600">STATION STATUS: ACTIVE REPLAY</text>
+    <text x="1075" y="62" fill="#7d8590" font-size="9">ELEVATION: 35M ASL • LARSEMANN HILLS</text>
+  </g>
+
+  <!-- Left Side: Helipad & Approach Zone -->
+  <g id="helipad" transform="translate(60, 480)">
+    <circle cx="45" cy="45" r="42" fill="none" stroke="#1f4b82" stroke-width="1.5" stroke-dasharray="6,4"/>
+    <circle cx="45" cy="45" r="32" fill="none" stroke="#163761" stroke-width="1"/>
+    <text x="45" y="53" fill="#388bfd" font-size="24" font-weight="800" text-anchor="middle" opacity="0.8">H</text>
+    <text x="45" y="98" fill="#7d8590" font-size="8" text-anchor="middle" letter-spacing="1">PRIMARY HELIPAD</text>
+  </g>
+
+  <!-- Main Aerodynamic Hull Outline (Bharati's iconic elevated envelope) -->
+  <g id="station-envelope">
+    <!-- Elevated Hydraulic Stilt Foundations -->
+    <g stroke="#1e4273" stroke-width="2" fill="#0a192e">
+      <rect x="150" y="550" width="18" height="60" rx="2"/>
+      <rect x="330" y="550" width="18" height="60" rx="2"/>
+      <rect x="510" y="550" width="18" height="60" rx="2"/>
+      <rect x="690" y="550" width="18" height="60" rx="2"/>
+      <rect x="870" y="550" width="18" height="60" rx="2"/>
+      <rect x="1050" y="550" width="18" height="60" rx="2"/>
+      <rect x="1200" y="550" width="18" height="60" rx="2"/>
+    </g>
+
+    <!-- Aerodynamic Outer Shell -->
+    <path d="M 120 300 
+             L 1240 300 
+             C 1270 300, 1285 340, 1280 430 
+             C 1275 510, 1250 545, 1210 545 
+             L 140 545 
+             C 110 545, 95 510, 100 430 
+             C 105 340, 110 300, 120 300 Z" 
+          fill="url(#hullGrad)" stroke="#2f6cb3" stroke-width="2.5" filter="url(#cyanGlow)"/>
+
+    <!-- Corridor Spine (Central Circulation Axis) -->
+    <line x1="140" y1="472" x2="1220" y2="472" stroke="#1b3e6b" stroke-width="10" stroke-dasharray="16,8"/>
+    <text x="680" y="476" fill="#388bfd" font-size="8" font-weight="600" text-anchor="middle" letter-spacing="2" opacity="0.7">CENTRAL PRESSURIZED TRANSIT SPINE</text>
+  </g>
+
+  <!-- ══════════════ 9 PHYSICAL STATION MODULES ══════════════ -->
+
+  <!-- 1. HVAC MODULE (Left Rooftop Pod) -> left: 26%, top: 16%, width: 10%, height: 12% -->
+  <g id="module-hvac">
+    <rect x="362" y="125" width="139" height="94" rx="6" fill="url(#utilGrad)" stroke="#388bfd" stroke-width="1.5"/>
+    <path d="M 372 135 L 491 135" stroke="#255380" stroke-width="1" stroke-dasharray="4,3"/>
+    <circle cx="431" cy="172" r="22" fill="none" stroke="#58a6ff" stroke-width="1.5"/>
+    <path d="M 431 154 L 431 190 M 413 172 L 449 172" stroke="#58a6ff" stroke-width="1.2"/>
+    <text x="431" y="210" fill="#8b949e" font-size="9" font-weight="600" text-anchor="middle">HVAC MODULE</text>
+  </g>
+
+  <!-- 2. WATER PUMP MODULE (Right Rooftop Pod) -> left: 42%, top: 16%, width: 10%, height: 12% -->
+  <g id="module-pump">
+    <rect x="585" y="125" width="139" height="94" rx="6" fill="url(#utilGrad)" stroke="#388bfd" stroke-width="1.5"/>
+    <path d="M 595 135 L 714 135" stroke="#255380" stroke-width="1" stroke-dasharray="4,3"/>
+    <path d="M 654 156 C 654 156, 638 174, 638 182 C 638 191, 645 197, 654 197 C 663 197, 670 191, 670 182 C 670 174, 654 156, 654 156 Z" fill="none" stroke="#58a6ff" stroke-width="1.5"/>
+    <text x="654" y="210" fill="#8b949e" font-size="9" font-weight="600" text-anchor="middle">WATER PUMP MODULE</text>
+  </g>
+
+  <!-- 3. POWER & FUEL TANKS (North-East Facility) -> left: 74%, top: 12%, width: 16%, height: 18% -->
+  <g id="module-power">
+    <rect x="1030" y="94" width="223" height="141" rx="8" fill="url(#powerGrad)" stroke="#d29922" stroke-width="2"/>
+    <ellipse cx="1075" cy="150" rx="24" ry="24" fill="#141a24" stroke="#d29922" stroke-width="1.2"/>
+    <ellipse cx="1135" cy="150" rx="24" ry="24" fill="#141a24" stroke="#d29922" stroke-width="1.2"/>
+    <text x="1075" y="154" fill="#d29922" font-size="9" font-weight="700" text-anchor="middle">TK-1</text>
+    <text x="1135" y="154" fill="#d29922" font-size="9" font-weight="700" text-anchor="middle">TK-2</text>
+    <rect x="1178" y="125" width="60" height="50" fill="#1c160b" stroke="#e3b341" stroke-width="1" rx="3"/>
+    <text x="1208" y="152" fill="#e3b341" font-size="8" font-weight="700" text-anchor="middle">GEN 1-3</text>
+    <text x="1141" y="222" fill="#d29922" font-size="10" font-weight="700" text-anchor="middle">POWER &amp; FUEL TANKS</text>
+  </g>
+
+  <!-- 4. CONTROL ROOM -> left: 10%, width: 11.5% -->
+  <g id="room-control">
+    <rect x="139" y="282" width="160" height="188" rx="5" fill="url(#roomGrad)" stroke="#234d7d" stroke-width="1.2"/>
+    <rect x="155" y="300" width="50" height="25" fill="#091424" stroke="#1f4b82" rx="2"/>
+    <circle cx="180" cy="312" r="3" fill="#3fb950"/>
+    <text x="219" y="375" fill="#8b949e" font-size="11" font-weight="600" text-anchor="middle">CONTROL ROOM</text>
+    <text x="219" y="392" fill="#484f58" font-size="8" text-anchor="middle">SCADA / TELEMETRY</text>
+  </g>
+
+  <!-- 5. LIVING QUARTERS -> left: 23%, width: 11.5% -->
+  <g id="room-living">
+    <rect x="320" y="282" width="160" height="188" rx="5" fill="url(#roomGrad)" stroke="#234d7d" stroke-width="1.2"/>
+    <rect x="336" y="300" width="35" height="45" fill="#091424" stroke="#1a3b63" rx="2"/>
+    <rect x="336" y="360" width="35" height="45" fill="#091424" stroke="#1a3b63" rx="2"/>
+    <text x="400" y="375" fill="#8b949e" font-size="11" font-weight="600" text-anchor="middle">LIVING QUARTERS</text>
+    <text x="400" y="392" fill="#484f58" font-size="8" text-anchor="middle">BERTH 1-12 / CLIMATE</text>
+  </g>
+
+  <!-- 6. LABORATORY -> left: 36%, width: 11.5% -->
+  <g id="room-laboratory">
+    <rect x="501" y="282" width="160" height="188" rx="5" fill="url(#roomGrad)" stroke="#234d7d" stroke-width="1.2"/>
+    <rect x="517" y="300" width="60" height="30" fill="#091424" stroke="#1a3b63" rx="2"/>
+    <text x="581" y="375" fill="#8b949e" font-size="11" font-weight="600" text-anchor="middle">LABORATORY</text>
+    <text x="581" y="392" fill="#484f58" font-size="8" text-anchor="middle">SPECTRAL / ATMOS</text>
+  </g>
+
+  <!-- 7. CANTEEN -> left: 49%, width: 11.5% -->
+  <g id="room-canteen">
+    <rect x="682" y="282" width="160" height="188" rx="5" fill="url(#roomGrad)" stroke="#234d7d" stroke-width="1.2"/>
+    <circle cx="762" cy="325" r="20" fill="#091424" stroke="#1a3b63"/>
+    <text x="762" y="375" fill="#8b949e" font-size="11" font-weight="600" text-anchor="middle">CANTEEN</text>
+    <text x="762" y="392" fill="#484f58" font-size="8" text-anchor="middle">MESS &amp; COLD RATION</text>
+  </g>
+
+  <!-- 8. MEDICAL CENTER -> left: 62%, width: 11.5% -->
+  <g id="room-medical">
+    <rect x="863" y="282" width="160" height="188" rx="5" fill="url(#roomGrad)" stroke="#234d7d" stroke-width="1.2"/>
+    <path d="M 937 312 L 949 312 L 949 300 L 957 300 L 957 312 L 969 312 L 969 320 L 957 320 L 957 332 L 949 332 L 949 320 L 937 320 Z" fill="#f85149" opacity="0.8"/>
+    <text x="943" y="375" fill="#8b949e" font-size="11" font-weight="600" text-anchor="middle">MEDICAL CENTER</text>
+    <text x="943" y="392" fill="#484f58" font-size="8" text-anchor="middle">TRIAGE &amp; PHARMA</text>
+  </g>
+
+  <!-- 9. DRY STORAGE -> left: 75%, width: 11.5% -->
+  <g id="room-storage">
+    <rect x="1044" y="282" width="160" height="188" rx="5" fill="url(#roomGrad)" stroke="#234d7d" stroke-width="1.2"/>
+    <rect x="1060" y="300" width="30" height="30" fill="#091424" stroke="#1a3b63" rx="1"/>
+    <rect x="1098" y="300" width="30" height="30" fill="#091424" stroke="#1a3b63" rx="1"/>
+    <text x="1124" y="375" fill="#8b949e" font-size="11" font-weight="600" text-anchor="middle">DRY STORAGE</text>
+    <text x="1124" y="392" fill="#484f58" font-size="8" text-anchor="middle">SPARES &amp; CONSUMABLES</text>
+  </g>
+
+  <!-- Bottom Technical Footer Details -->
+  <g id="blueprint-footer">
+    <line x1="40" y1="715" x2="1352" y2="715" stroke="#122b49" stroke-width="1"/>
+    <text x="50" y="738" fill="#484f58" font-size="10">SCALE: 1:150 METRIC • ORIENTATION: 083° TRUE NORTH • ENVELOPE: AERODYNAMIC MONOCOQUE HULL</text>
+    <text x="1342" y="738" fill="#484f58" font-size="10" text-anchor="end">POLAR SYNC TELEMETRY OVERLAY SYSTEM</text>
+  </g>
+</svg>
