@@ -57,21 +57,52 @@ export async function checkHealth() {
  * @param {string} alertId - e.g. 'low_battery'
  * @param {string} alertMessage - e.g. 'LOW BATTERY RESERVE'
  * @param {string} severity - 'critical' or 'warning'
+ * @param {string} [eventId] - optional anomaly event ID for post-recovery analysis
  * @returns {Promise<Object>} Structured AI analysis
  */
-export async function analyzeAlert(alertId, alertMessage, severity) {
+export async function analyzeAlert(alertId, alertMessage, severity, eventId) {
+  const body = {
+    alert_id: alertId,
+    alert_message: alertMessage,
+    severity: severity
+  };
+  if (eventId) body.event_id = eventId;
+
   const response = await fetch(`${API_URL}/api/alerts/analyze`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/json"
     },
-    body: JSON.stringify({
-      alert_id: alertId,
-      alert_message: alertMessage,
-      severity: severity
-    })
+    body: JSON.stringify(body)
   });
 
+  let data = await response.json();
+  
+  if (data.job_id) {
+    while (data.status === 'loading') {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const pollResponse = await fetch(`${API_URL}/api/alerts/analyze/${data.job_id}`, {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+      data = await pollResponse.json();
+    }
+  }
+
+  return data;
+}
+
+/**
+ * Fetch recent anomaly events (active + resolved) for alert history
+ * @param {string} [station="MAITRI"] - Station identifier (MAITRI or BHARATI)
+ * @returns {Promise<Array>} List of anomaly events, newest first
+ */
+export async function fetchAnomalyEvents(station = "MAITRI") {
+  const response = await fetch(`${API_URL}/api/anomaly-events?station=${station}`, {
+    method: "GET",
+    headers: { "Accept": "application/json" }
+  });
+  if (!response.ok) return [];
   return await response.json();
 }

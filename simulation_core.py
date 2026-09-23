@@ -293,6 +293,13 @@ SCENARIO_TYPES = [
     "HUMIDITY_ANOMALY",
     "GENERATOR_FAILURE",
     "COMMUNICATION_FAILURE",
+    "EQUIPMENT_OVERHEAT",
+    "HIGH_VIBRATION",
+    "HEATING_SURGE",
+    "PUMP_FAILURE",
+    "POWER_GENERATION_DROP",
+    "POWER_CONSUMPTION_SPIKE",
+    "GENERATOR_LOAD_SPIKE",
 ]
 
 
@@ -401,7 +408,12 @@ class SimulationCore:
                 infra.backup_heater_health - rng.uniform(0.001, 0.01), 0.0, 100.0
             )
 
+        if "HEATING_SURGE" in s.active_scenarios:
+            required_heating = 75.0  # Force it above the 65.0 threshold
+
         equilibrium_temp = target_indoor - heating_deficit * 2.0
+        if "EQUIPMENT_OVERHEAT" in s.active_scenarios:
+            equilibrium_temp += 45.0  # Push target temp up, causing gradual drift
 
         infra.equipment_temperature = clamp(
             infra.equipment_temperature
@@ -410,7 +422,7 @@ class SimulationCore:
             15.0, 80.0,
         )
 
-        infra.heating = clamp(required_heating + rng.normal(0, 2), 0.0, 60.0)
+        infra.heating = clamp(required_heating + rng.normal(0, 2), 0.0, 100.0)
 
         # Water treatment and communication equipment: slow background
         # wear, with status derived from health rather than hardcoded.
@@ -424,7 +436,7 @@ class SimulationCore:
         infra.water_treatment_health = clamp(
             infra.water_treatment_health - rng.uniform(water_wear_low, water_wear_high), 0.0, 100.0
         )
-        if infra.water_treatment_health <= 20.0:
+        if infra.water_treatment_health <= 20.0 or "PUMP_FAILURE" in s.active_scenarios:
             infra.water_treatment_status = "OFFLINE"
         elif infra.water_treatment_health <= 50.0:
             infra.water_treatment_status = "DEGRADED"
@@ -453,10 +465,13 @@ class SimulationCore:
         # comms, life support; heating adds on top of that.
         baseline_load = 40.0
         target_consumption = baseline_load + infra.heating * 0.9 + backup_heater_draw
+        if "POWER_CONSUMPTION_SPIKE" in s.active_scenarios:
+            target_consumption += 35.0
+
         energy.power_consumption = clamp(
             energy.power_consumption + (target_consumption - energy.power_consumption) * 0.2
             + rng.uniform(-1.5, 1.5),
-            30.0, 110.0,
+            30.0, 130.0,
         )
 
         # Reduced air pressure means lower oxygen density, which derates
@@ -482,13 +497,21 @@ class SimulationCore:
             target_load = clamp(
                 ((energy.power_consumption + charge_margin) / max_capacity) * 100.0, 20.0, 90.0
             )
+            if "GENERATOR_LOAD_SPIKE" in s.active_scenarios:
+                target_load = 96.0
+
             energy.generator_load = clamp(
                 energy.generator_load + (target_load - energy.generator_load) * 0.3
                 + rng.uniform(-1.0, 1.0),
-                20.0, 90.0,
+                20.0, 100.0,
             )
+            
+            target_generation = energy.generator_load * 1.20 * pressure_derate
+            if "POWER_GENERATION_DROP" in s.active_scenarios:
+                target_generation = clamp(target_generation * 0.3, 10.0, 35.0)
+
             energy.power_generation = clamp(
-                energy.generator_load * 1.20 * pressure_derate + rng.normal(0, 2), 20.0, 120.0
+                target_generation + rng.normal(0, 2), 10.0, 120.0
             )
         elif energy.generator_status == "FAULT":
             energy.generator_load = clamp(energy.generator_load * 0.5, 0.0, 30.0)
@@ -513,12 +536,19 @@ class SimulationCore:
 
         if energy.generator_status == "FAULT":
             energy.generator_health = clamp(energy.generator_health - rng.uniform(0.02, 0.05), 0.0, 100.0)
+        elif "GENERATOR_FAILURE" in s.active_scenarios:
+            energy.generator_health = clamp(energy.generator_health - rng.uniform(3.0, 6.0), 0.0, 100.0)
         else:
             energy.generator_health = clamp(energy.generator_health - rng.uniform(0.001, 0.01), 0.0, 100.0)
 
-        infra.vibration = clamp(
-            infra.vibration + rng.uniform(-0.2, 0.2), 0.5, 5.0
-        )
+        if "HIGH_VIBRATION" in s.active_scenarios:
+            infra.vibration = clamp(
+                infra.vibration + (9.5 - infra.vibration) * 0.2 + rng.uniform(-0.5, 0.5), 0.5, 12.0
+            )
+        else:
+            infra.vibration = clamp(
+                infra.vibration + (4.0 - infra.vibration) * 0.1 + rng.uniform(-0.2, 0.2), 0.5, 5.0
+            )
         energy.energy = clamp(
             energy.energy + energy_difference * 0.01 + rng.normal(0, 0.5),
             0.0, 1000.0,

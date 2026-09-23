@@ -1,6 +1,8 @@
 import json
+import random
 import threading
 import time
+import uuid
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -8,6 +10,7 @@ from flasgger import Swagger
 from collections import deque
 
 from simulation_core import SimulationConfig, SimulationCore, StationID, SimulationRNG, SCENARIO_TYPES
+from datetime import datetime
 from environment import load_maitri_dataset, ReplayEngine
 
 config = SimulationConfig.from_env()
@@ -41,6 +44,12 @@ cores = {
     ),
 }
 
+# Give Bharati different logistics starting values so the stations don't look identical
+cores[StationID.BHARATI].state.logistics.food_stock_kg = 2450.0
+cores[StationID.BHARATI].state.logistics.food_consumption_daily_kg = 18.0
+cores[StationID.BHARATI].state.logistics.medicine_stock_units = 612.0
+cores[StationID.BHARATI].state.logistics.generator_fuel_reserve_l = 155000.0
+
 latest_data = {StationID.MAITRI: {}, StationID.BHARATI: {}}
 telemetry_history = {
     StationID.MAITRI: deque(maxlen=20),
@@ -53,6 +62,21 @@ data_lock = threading.Lock()
 # "stop ticking," not "destroy the simulation."
 simulator_running = threading.Event()
 simulator_running.set()
+
+# ── Random Anomaly Engine State ──────────────────────────────
+# Anomaly events log — keeps the last 20 events so the frontend
+# can show alert history and users can analyze events post-recovery.
+ANOMALY_EVENTS = {
+    StationID.MAITRI: deque(maxlen=20),
+    StationID.BHARATI: deque(maxlen=20)
+}
+AI_JOBS = {}
+
+# Engine state for Maitri & Bharati
+anomaly_engine_state = {
+    StationID.MAITRI: { "state": "normal", "cooldown": random.randint(15, 30), "current_event": None },
+    StationID.BHARATI: { "state": "normal", "cooldown": random.randint(15, 30), "current_event": None }
+}
 
 # Small, deterministic threshold list -- same pattern already used in
 # the frontend's stationRooms.js alert rules, ported here so the demo
@@ -98,14 +122,8 @@ DOMAIN_FIELDS = {
                   "generator_fuel_reserve_l", "generator_fuel_reserve_days_remaining", "resupply_risk"],
 }
 
-SCENARIO_PRESETS = {
-    "extreme_cold_demo": {"type": "EXTREME_COLD", "duration_ticks": 30},
-    "extreme_wind_demo": {"type": "EXTREME_WIND", "duration_ticks": 30},
-    "pressure_drop_demo": {"type": "PRESSURE_DROP", "duration_ticks": 30},
-    "humidity_anomaly_demo": {"type": "HUMIDITY_ANOMALY", "duration_ticks": 30},
-    "generator_failure_demo": {"type": "GENERATOR_FAILURE", "duration_ticks": 20},
-    "communication_failure_demo": {"type": "COMMUNICATION_FAILURE", "duration_ticks": 20},
-}
+# Anomaly duration in ticks (10 ticks × 2s interval = 20 seconds)
+ANOMALY_DURATION_TICKS = 10
 
 
 def _parse_station(default="MAITRI"):
@@ -119,15 +137,73 @@ def _parse_station(default="MAITRI"):
 
 
 def run_simulator_background():
-    global latest_data
+    global latest_data, anomaly_engine_state
     try:
         while True:
             if simulator_running.is_set():
+                # ── Random Anomaly Engine (All Stations) ──────────
+                for station_id, station_core in cores.items():
+                    engine = anomaly_engine_state[station_id]
+                    
+                    if engine["state"] == "normal":
+                        engine["cooldown"] -= 1
+                        if engine["cooldown"] <= 0:
+                            # Pick a random scenario and start it
+                            scenario_type = random.choice(SCENARIO_TYPES)
+                            with data_lock:
+                                station_core.start_scenario(scenario_type, ANOMALY_DURATION_TICKS)
+
+                            event_id = f"evt-{uuid.uuid4().hex[:8]}"
+                            engine["current_event"] = {
+                                "id": event_id,
+                                "type": scenario_type,
+                                "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "ended_at": None,
+                                "status": "ACTIVE",
+                                "snapshots": [],
+                            }
+                            with data_lock:
+                                ANOMALY_EVENTS[station_id].append(engine["current_event"])
+
+                            engine["state"] = "anomaly"
+                            print(f"[ANOMALY] {station_id.value}: {scenario_type} started (event {event_id})", flush=True)
+
+                    elif engine["state"] == "anomaly":
+                        # Check if the scenario has expired (tick countdown handles this)
+                        with data_lock:
+                            active = station_core.get_active_scenarios()
+                        if not active:
+                            # Anomaly just ended
+                            if engine["current_event"]:
+                                engine["current_event"]["ended_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                engine["current_event"]["status"] = "RESOLVED"
+                                print(f"[ANOMALY] {station_id.value}: {engine['current_event']['type']} resolved", flush=True)
+                                engine["current_event"] = None
+
+                            engine["state"] = "normal"
+                            engine["cooldown"] = random.randint(15, 30)
+
+                # ── Tick all stations ────────────────────────────
                 for station_id, station_core in cores.items():
                     data = station_core.tick().to_api_dict()
                     with data_lock:
                         latest_data[station_id] = data
                         telemetry_history[station_id].append(data)
+
+                    # Capture telemetry snapshot during active anomaly
+                    engine = anomaly_engine_state[station_id]
+                    if engine["current_event"] and engine["current_event"]["status"] == "ACTIVE":
+                        relevant_keys = [
+                            "temperature", "air_pressure", "wind_speed", "humidity",
+                            "energy", "generator_load", "power_generation", "power_consumption",
+                            "fuel_level", "battery_soc", "heating", "generator_health",
+                            "pump_status", "equipment_temperature", "vibration",
+                            "generator_status", "communication_equipment_status",
+                        ]
+                        snapshot = {k: data.get(k) for k in relevant_keys if data.get(k) is not None}
+                        snapshot["timestamp"] = data.get("timestamp")
+                        engine["current_event"]["snapshots"].append(snapshot)
+
                     print(json.dumps(data, separators=(",", ":")), flush=True)
             time.sleep(config.interval_seconds)
     except Exception as e:
@@ -317,97 +393,9 @@ def simulator_stop():
     return jsonify({"status": "ok", "running": False})
 
 
-@app.route("/scenario/start", methods=["POST"])
-def scenario_start():
-    """Start a deterministic scenario on a station.
-    ---
-    parameters:
-      - name: body
-        in: body
-        required: true
-        schema:
-          type: object
-          properties:
-            station:
-              type: string
-              enum: [MAITRI, BHARATI]
-            type:
-              type: string
-              enum: [EXTREME_COLD, EXTREME_WIND, PRESSURE_DROP, HUMIDITY_ANOMALY, GENERATOR_FAILURE, COMMUNICATION_FAILURE]
-            duration_ticks:
-              type: integer
-              default: 30
-    responses:
-      200:
-        description: Scenario started
-      400:
-        description: Unknown station, unknown scenario type, or invalid duration
-    """
-    body = request.get_json(silent=True) or {}
-    result = _parse_station()
-    if result[1] is not None:
-        return result[1], result[2]
-    station_id = result[0]
-
-    scenario_type = (body.get("type") or "").upper()
-    duration_ticks = body.get("duration_ticks", 30)
-
-    with data_lock:
-        try:
-            cores[station_id].start_scenario(scenario_type, duration_ticks)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-
-    return jsonify({
-        "status": "ok",
-        "station": station_id.value,
-        "scenario_started": scenario_type,
-        "duration_ticks": duration_ticks,
-    })
-
-
-@app.route("/scenario/stop", methods=["POST"])
-def scenario_stop():
-    """Stop a specific scenario, or all active scenarios if type is omitted.
-    ---
-    parameters:
-      - name: body
-        in: body
-        required: true
-        schema:
-          type: object
-          properties:
-            station:
-              type: string
-              enum: [MAITRI, BHARATI]
-            type:
-              type: string
-              enum: [EXTREME_COLD, EXTREME_WIND, PRESSURE_DROP, HUMIDITY_ANOMALY, GENERATOR_FAILURE, COMMUNICATION_FAILURE]
-    responses:
-      200:
-        description: Scenario(s) stopped
-      400:
-        description: Unknown station
-    """
-    body = request.get_json(silent=True) or {}
-    result = _parse_station()
-    if result[1] is not None:
-        return result[1], result[2]
-    station_id = result[0]
-
-    scenario_type = body.get("type")
-    with data_lock:
-        if scenario_type:
-            cores[station_id].stop_scenario(scenario_type.upper())
-        else:
-            cores[station_id].stop_all_scenarios()
-
-    return jsonify({"status": "ok", "station": station_id.value, "stopped": scenario_type or "ALL"})
-
-
-@app.route("/scenario/status", methods=["GET"])
-def scenario_status():
-    """Active scenarios and remaining ticks for a station.
+@app.route("/api/anomaly-events", methods=["GET"])
+def get_anomaly_events():
+    """List recent anomaly events (active + resolved) for alert history for one station.
     ---
     parameters:
       - name: station
@@ -418,9 +406,7 @@ def scenario_status():
         default: MAITRI
     responses:
       200:
-        description: Active scenarios
-      400:
-        description: Unknown station
+        description: List of anomaly events, newest first
     """
     result = _parse_station()
     if result[1] is not None:
@@ -428,58 +414,9 @@ def scenario_status():
     station_id = result[0]
 
     with data_lock:
-        active = cores[station_id].get_active_scenarios()
-    return jsonify({"station": station_id.value, "active_scenarios": active})
-
-
-@app.route("/scenario/presets", methods=["GET"])
-def scenario_presets():
-    """List available named scenario presets.
-    ---
-    responses:
-      200:
-        description: Preset definitions
-    """
-    return jsonify(SCENARIO_PRESETS)
-
-
-@app.route("/scenario/preset/start", methods=["POST"])
-def scenario_preset_start():
-    """Start a named preset scenario on a station.
-    ---
-    parameters:
-      - name: body
-        in: body
-        required: true
-        schema:
-          type: object
-          properties:
-            station:
-              type: string
-              enum: [MAITRI, BHARATI]
-            preset:
-              type: string
-    responses:
-      200:
-        description: Preset started
-      400:
-        description: Unknown station or preset name
-    """
-    body = request.get_json(silent=True) or {}
-    result = _parse_station()
-    if result[1] is not None:
-        return result[1], result[2]
-    station_id = result[0]
-
-    preset_name = body.get("preset")
-    preset = SCENARIO_PRESETS.get(preset_name)
-    if preset is None:
-        return jsonify({"error": f"Unknown preset '{preset_name}'. Known: {list(SCENARIO_PRESETS.keys())}"}), 400
-
-    with data_lock:
-        cores[station_id].start_scenario(preset["type"], preset["duration_ticks"])
-
-    return jsonify({"status": "ok", "station": station_id.value, "preset": preset_name, **preset})
+        events = list(ANOMALY_EVENTS[station_id])
+    events.reverse()  # newest first
+    return jsonify(events)
 
 
 @app.route("/demo/snapshot", methods=["GET"])
@@ -548,7 +485,7 @@ def analyze_alert_endpoint():
         description: AI service unavailable
     """
     try:
-        from ollama_service import analyze_alert
+        from ollama_service import analyze_alert, analyze_alert_async
     except ImportError as e:
         return jsonify({
             "error": True,
@@ -563,33 +500,87 @@ def analyze_alert_endpoint():
     alert_id      = req.get("alert_id",      "unknown")
     alert_message = req.get("alert_message",  "Unknown alert")
     severity      = req.get("severity",       "unknown")
-
-    with data_lock:
-        current = dict(latest_data.get(StationID.MAITRI, {}))
-        history_list = list(telemetry_history[StationID.MAITRI])
+    event_id      = req.get("event_id")  # optional — for post-recovery analysis
 
     relevant_keys = [
         "energy", "generator_load", "power_generation", "power_consumption",
         "fuel_level", "battery_soc", "heating", "generator_health",
-        "pump_status", "equipment_temperature", "vibration"
+        "pump_status", "equipment_temperature", "vibration",
+        "temperature", "air_pressure", "wind_speed", "humidity",
+        "generator_status", "communication_equipment_status",
     ]
-    current_telem = {k: current.get(k) for k in relevant_keys if current.get(k) is not None}
 
-    recent = []
-    for snap in history_list[-10:]:
-        entry = {k: snap.get(k) for k in relevant_keys if snap.get(k) is not None}
-        recent.append(entry)
+    # If an event_id is provided, use the stored event snapshots
+    # instead of live telemetry — this solves the 20s timing problem.
+    event_context = {}
+    if event_id:
+        with data_lock:
+            found = False
+            for sid, queue in ANOMALY_EVENTS.items():
+                for evt in queue:
+                    if evt["id"] == event_id:
+                        event_context = {
+                            "event_type": evt["type"],
+                            "started_at": evt["started_at"],
+                            "ended_at": evt.get("ended_at"),
+                            "status": evt["status"],
+                        }
+                        # Use event snapshots as recent telemetry
+                        recent = list(evt.get("snapshots", [])[-3:])
+                        current_telem = recent[-1] if recent else {}
+                        found = True
+                        break
+                if found:
+                    break
+            if not found:
+                event_context = {}
+
+    if not event_context:
+        # Fallback: use live telemetry (original behavior)
+        with data_lock:
+            current = dict(latest_data.get(StationID.MAITRI, {}))
+            history_list = list(telemetry_history[StationID.MAITRI])
+        current_telem = {k: current.get(k) for k in relevant_keys if current.get(k) is not None}
+        recent = []
+        for snap in history_list[-3:]:
+            entry = {k: snap.get(k) for k in relevant_keys if snap.get(k) is not None}
+            recent.append(entry)
 
     alert_context = {
         "station": "Maitri",
-        "alert": {"type": alert_id, "message": alert_message, "severity": severity},
+        "alert": {
+            "type": event_context.get("event_type", alert_id),
+            "message": alert_message,
+            "severity": severity,
+            "duration_seconds": 20 if event_context.get("ended_at") else None,
+        },
         "current_telemetry": current_telem,
         "recent_telemetry": recent,
     }
 
-    result = analyze_alert(alert_context)
-    status_code = 503 if result.get("error") else 200
-    return jsonify(result), status_code
+    job_id = uuid.uuid4().hex
+    AI_JOBS[job_id] = {"status": "loading", "result": None}
+
+    def _on_done(res):
+        AI_JOBS[job_id]["status"] = "done"
+        AI_JOBS[job_id]["result"] = res
+
+    analyze_alert_async(alert_context, _on_done)
+    return jsonify({"job_id": job_id, "status": "loading"}), 202
+
+@app.route("/api/alerts/analyze/<job_id>", methods=["GET"])
+def get_analysis_status(job_id):
+    """Poll AI analysis status."""
+    if job_id not in AI_JOBS:
+        return jsonify({"error": True, "message": "Job not found"}), 404
+    
+    job = AI_JOBS[job_id]
+    if job["status"] == "done":
+        result = job["result"]
+        status_code = 503 if result.get("error") else 200
+        return jsonify(result), status_code
+    
+    return jsonify({"job_id": job_id, "status": "loading"}), 202
 
 
 if __name__ == "__main__":

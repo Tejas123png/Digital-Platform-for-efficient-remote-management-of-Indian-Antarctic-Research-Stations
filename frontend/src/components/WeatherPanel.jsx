@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { fetchWeatherData } from '../services/weatherService';
 import WeatherCards from './WeatherCards';
 import WeatherCharts from './WeatherCharts';
-import WindCompass from './WindCompass';
 import WeatherSummary from './WeatherSummary';
 
 export default function WeatherPanel({ station = 'MAITRI' }) {
@@ -75,11 +74,8 @@ export default function WeatherPanel({ station = 'MAITRI' }) {
       </div>
 
       <div className="ps-weather-middle-grid">
-        <div className="ps-weather-middle-charts">
+        <div className="ps-weather-middle-charts" style={{ width: '100%' }}>
           <WeatherCharts history={data.history} />
-        </div>
-        <div className="ps-weather-middle-compass">
-          <WindCompass direction={data.current?.windDirection} />
         </div>
       </div>
 

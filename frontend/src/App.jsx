@@ -10,7 +10,7 @@ import WeatherPanel  from './components/WeatherPanel';
 import ChartsSection from './components/ChartsSection';
 import LogsView      from './components/LogsView';
 
-import { fetchStationData } from './services/api';
+import { fetchStationData, fetchAnomalyEvents } from './services/api';
 import { detectAlerts }     from './data/stationRooms';
 
 const POLL_INTERVAL    = 2000;   // ms — matches simulator 2s interval
@@ -58,16 +58,43 @@ function buildLogEntry(data, prevData) {
   return entries;
 }
 
+/* ── Logistics helpers ─────────────────────────────────────── */
+function LogisticsStatus({ status }) {
+  if (!status) return <span className="ps-logistics-status" style={{ color: 'var(--text-muted)' }}>● --</span>;
+  const s = status.toUpperCase();
+  let color = 'var(--status-normal)';
+  let label = 'OK';
+  if (s === 'CRITICAL') { color = 'var(--status-critical)'; label = 'CRIT'; }
+  else if (s === 'WARNING' || s === 'ELEVATED' || s === 'LOW') { color = 'var(--status-warning)'; label = 'WARN'; }
+  else if (s === 'NORMAL') { label = 'OK'; }
+  else { label = s; }
+  return <span className="ps-logistics-status" style={{ color }}>● {label}</span>;
+}
+
+function LogisticsRow({ label, qty, qtyUnit, days, status }) {
+  const qtyStr = qty != null ? (typeof qty === 'number' ? Math.round(qty).toLocaleString() : qty) : '--';
+  const daysStr = days != null ? `${days}d` : '--';
+  return (
+    <div className="ps-logistics-row">
+      <span className="ps-logistics-label">{label}</span>
+      <span className="ps-logistics-qty">{qtyStr} <span className="ps-logistics-unit">{qtyUnit}</span></span>
+      <span className="ps-logistics-days">{daysStr}</span>
+      <LogisticsStatus status={status} />
+    </div>
+  );
+}
+
 export default function App() {
   const [stationData,       setStationData]       = useState(null);
-  const [history,           setHistory]           = useState([]);
-  const [logs,              setLogs]              = useState([]);
+  const [history,           setHistory]           = useState({ MAITRI: [], BHARATI: [] });
+  const [logs,              setLogs]              = useState({ MAITRI: [], BHARATI: [] });
   const [alerts,            setAlerts]            = useState([]);
+  const [anomalyEvents,     setAnomalyEvents]     = useState({ MAITRI: [], BHARATI: [] });
   const [connectionStatus,  setConnectionStatus]  = useState('connecting');
   const [selectedRoom,      setSelectedRoom]      = useState(null);
   const [activeStation,     setActiveStation]     = useState('MAITRI');
 
-  const prevDataRef = useRef(null);
+  const prevDataRef = useRef({ MAITRI: null, BHARATI: null });
 
   const poll = useCallback(async () => {
     try {
@@ -77,23 +104,38 @@ export default function App() {
       setStationData(data);
       setConnectionStatus('connected');
 
-      // Update rolling history
+      // Update rolling history for the active station
       setHistory((h) => {
-        const next = [...h, data];
-        return next.length > MAX_HISTORY ? next.slice(-MAX_HISTORY) : next;
+        const currentHist = h[activeStation] || [];
+        const next = [...currentHist, data];
+        return {
+          ...h,
+          [activeStation]: next.length > MAX_HISTORY ? next.slice(-MAX_HISTORY) : next
+        };
       });
 
-      // Generate log entries
-      const newEntries = buildLogEntry(data, prevDataRef.current);
+      // Generate log entries using station-specific previous data
+      const prevData = prevDataRef.current[activeStation];
+      const newEntries = buildLogEntry(data, prevData);
       setLogs((l) => {
-        const next = [...l, ...newEntries];
-        return next.length > MAX_LOGS ? next.slice(-MAX_LOGS) : next;
+        const currentLogs = l[activeStation] || [];
+        const next = [...currentLogs, ...newEntries];
+        return {
+          ...l,
+          [activeStation]: next.length > MAX_LOGS ? next.slice(-MAX_LOGS) : next
+        };
       });
 
       // Detect alerts
       setAlerts(detectAlerts(data));
 
-      prevDataRef.current = data;
+      // Poll anomaly events for alert history
+      try {
+        const events = await fetchAnomalyEvents(activeStation);
+        setAnomalyEvents((prev) => ({ ...prev, [activeStation]: events }));
+      } catch (_) { /* non-critical */ }
+
+      prevDataRef.current[activeStation] = data;
     } catch (err) {
       setConnectionStatus('disconnected');
     }
@@ -108,9 +150,7 @@ export default function App() {
   const handleStationChange = useCallback((station) => {
     setActiveStation(station);
     setSelectedRoom(null);
-    setHistory([]);
-    setLogs([]);
-    prevDataRef.current = null;
+    // Removed setHistory([]) and setLogs([]) so graphs and logs persist per station
   }, []);
 
   const handleRoomSelect = useCallback((roomId) => {
@@ -139,7 +179,7 @@ export default function App() {
       <div className="ps-layout">
         {/* LEFT PANEL */}
         <div className="ps-left">
-          <LeftPanel data={stationData} />
+          <LeftPanel data={stationData} alerts={alerts} />
           <WeatherPanel station={activeStation} />
         </div>
 
@@ -162,29 +202,62 @@ export default function App() {
           )}
         </div>
 
-        {/* RIGHT PANEL — Alerts + Room Inspector */}
+        {/* RIGHT PANEL — Alerts + Logistics */}
         <div className="ps-right">
-          <AlertPanel alerts={alerts} onAlertClick={handleAlertClick} />
-          <div className="ps-panel-section">
-            <div className="ps-section-title">Room Inspector</div>
+          <AlertPanel station={activeStation} alerts={alerts} anomalyEvents={anomalyEvents[activeStation] || []} onAlertClick={handleAlertClick} />
+          
+          <div className="ps-right-section ps-logistics-section">
+            <div className="ps-right-section__title">Logistics</div>
+            <div className="ps-logistics">
+              <LogisticsRow
+                label="FOOD"
+                qty={stationData?.food_stock_kg}
+                qtyUnit="kg"
+                days={stationData?.food_days_remaining}
+                status={stationData?.food_status}
+              />
+              <LogisticsRow
+                label="MEDICINE"
+                qty={stationData?.medicine_stock_units}
+                qtyUnit="u"
+                days={stationData?.medicine_days_remaining}
+                status={stationData?.medicine_status}
+              />
+              <LogisticsRow
+                label="FUEL"
+                qty={stationData?.generator_fuel_reserve_l}
+                qtyUnit="L"
+                days={stationData?.generator_fuel_reserve_days_remaining}
+                status={stationData?.fuel_level != null && stationData.fuel_level < 20 ? 'WARNING' : 'NORMAL'}
+              />
+              <div className="ps-logistics-row" style={{ marginTop: '2px', paddingTop: '4px', borderTop: '1px solid var(--border)' }}>
+                <span className="ps-logistics-label">RESUPPLY</span>
+                <span style={{ flex: 1 }} />
+                <LogisticsStatus status={stationData?.resupply_risk} />
+              </div>
+            </div>
           </div>
-          <RoomInfoPanel
-            selectedRoomId={selectedRoom}
-            stationData={stationData}
-            onClose={handleRoomClose}
-          />
         </div>
 
         {/* BOTTOM — Charts + Logs */}
         <div className="ps-bottom">
-          <ChartsSection history={history} />
+          <ChartsSection history={history[activeStation] || []} />
 
           <div className="ps-bottom-section">
             <div className="ps-bottom-section__title">Event Log</div>
-            <LogsView logs={logs} />
+            <LogsView logs={logs[activeStation] || []} />
           </div>
         </div>
       </div>
+
+      {/* Room Inspector Modal — rendered outside the grid layout */}
+      {selectedRoom && (
+        <RoomInfoPanel
+          selectedRoomId={selectedRoom}
+          stationData={stationData}
+          onClose={handleRoomClose}
+        />
+      )}
     </div>
   );
 }

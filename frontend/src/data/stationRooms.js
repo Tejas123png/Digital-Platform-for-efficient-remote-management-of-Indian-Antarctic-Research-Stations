@@ -132,16 +132,31 @@ export const STATION_ROOMS = [
   },
   {
     id: 'storage',
-    name: 'Storage',
+    name: 'Storage & Resources',
     shortName: 'Storage',
     category: 'logistics',
     icon: '📦',
-    description: 'Equipment and supplies storage — fuel drums and provisions',
-    telemetryFields: ['fuel_level'],
+    description: 'Station supplies — fuel reserves, food provisions, and medicine stock',
+    telemetryFields: [
+      'fuel_level',
+      'generator_fuel_reserve_l',
+      'generator_fuel_reserve_days_remaining',
+      'resupply_risk',
+      'food_stock_kg',
+      'food_days_remaining',
+      'food_consumption_daily_kg',
+      'food_storage_temperature',
+      'food_status',
+      'medicine_stock_units',
+      'medicine_days_remaining',
+      'medicine_consumption_daily',
+      'medicine_storage_temperature',
+      'medicine_status',
+    ],
     statusLogic: (data) => {
       if (!data) return 'unknown';
-      if (data.fuel_level < 20) return 'critical';
-      if (data.fuel_level < 40) return 'warning';
+      if (data.fuel_level < 20 || data.food_status === 'CRITICAL' || data.medicine_status === 'CRITICAL') return 'critical';
+      if (data.fuel_level < 40 || data.food_status === 'LOW' || data.medicine_status === 'LOW') return 'warning';
       return 'normal';
     },
   },
@@ -377,6 +392,15 @@ export const ALERT_RULES = [
     severity: 'critical',
     message: 'HIGH VIBRATION',
     description: (v) => `Vibration at ${v} mm/s — exceeds 7.0 safe threshold`,
+    roomId: 'generator',
+  },
+  {
+    id: 'equipment_overheat',
+    field: 'equipment_temperature',
+    condition: (v) => v > 50,
+    severity: 'critical',
+    message: 'EQUIPMENT OVERHEAT',
+    description: (v) => `Equipment temperature at ${v} °C — exceeds 50 °C safe threshold`,
     roomId: 'generator',
   },
   {
