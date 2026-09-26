@@ -182,13 +182,7 @@ PolarSync/
 
 ---
 
-## 📄 Technical PDF Report
 
-For an executive deep-dive into the mathematical and architectural design of PolarSync's Edge Layer and SQLite database, refer to the included technical report:
-
-📄 **[PolarSync_Edge_Computing_and_DB_Report.pdf](PolarSync_Edge_Computing_and_DB_Report.pdf)**
-
----
 
 ## 🛠 License & Credits
 Built for Antarctic Station Management & Resilient Remote Systems Engineering.
