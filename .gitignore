@@ -23,3 +23,8 @@ frontend/.env.*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Edge SQLite database files
+data/*.db
+data/*.db-wal
+data/*.db-shm

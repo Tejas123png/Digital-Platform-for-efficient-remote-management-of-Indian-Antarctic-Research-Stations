@@ -12,6 +12,10 @@ from collections import deque
 from simulation_core import SimulationConfig, SimulationCore, StationID, SimulationRNG, SCENARIO_TYPES
 from datetime import datetime
 from environment import load_maitri_dataset, ReplayEngine
+from network_state import network_state, NetworkMode
+from edge_storage import EdgeStorage
+from edge_pipeline import EdgePipeline
+from sync_worker import SyncWorker, central_store
 
 config = SimulationConfig.from_env()
 config.dataset_path = config.dataset_path or "data/maitri_weather_2016.json"
@@ -101,6 +105,11 @@ def compute_alerts(d: dict) -> list:
         alerts.append({"id": "water_offline", "severity": "HIGH", "message": "Water treatment offline"})
     return alerts
 
+edge_store = EdgeStorage()
+edge_pipeline = EdgePipeline(edge_store, network_state, compute_alerts, normal_sample_every_n_ticks=5)
+sync_worker = SyncWorker(edge_store, network_state, central=central_store)
+
+
 
 # Domain groupings for /telemetry/{domain}/latest -- to_api_dict() is a
 # flat dict, so this just slices it by field name rather than requiring
@@ -186,9 +195,13 @@ def run_simulator_background():
                 # ── Tick all stations ────────────────────────────
                 for station_id, station_core in cores.items():
                     data = station_core.tick().to_api_dict()
+                    tick_time = time.time()
                     with data_lock:
                         latest_data[station_id] = data
                         telemetry_history[station_id].append(data)
+
+                    # Edge pipeline: classify alerts, buffer records (after lock released)
+                    edge_pipeline.process_tick(station_id, data, tick_time)
 
                     # Capture telemetry snapshot during active anomaly
                     engine = anomaly_engine_state[station_id]
@@ -258,6 +271,45 @@ def set_network_mode():
     return jsonify({"network_mode": config.network_mode})
 
 
+@app.route("/api/network/set-mode", methods=["POST"])
+def edge_set_network_mode():
+    """Set the edge network mode (ONLINE / DEGRADED / OFFLINE).
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum: [ONLINE, DEGRADED, OFFLINE]
+    responses:
+      200:
+        description: Updated edge network state
+      400:
+        description: Invalid mode
+    """
+    data = request.get_json(silent=True) or {}
+    mode = str(data.get("mode", "")).upper()
+    if mode not in NetworkMode.__members__:
+        return jsonify({"error": "mode must be ONLINE, DEGRADED or OFFLINE"}), 400
+    network_state.set_mode(NetworkMode[mode], source="manual")
+    return jsonify(network_state.snapshot())
+
+
+@app.route("/api/network/status")
+def edge_get_network_status():
+    """Current edge network state snapshot.
+    ---
+    responses:
+      200:
+        description: Edge network state
+    """
+    return jsonify(network_state.snapshot())
+
+
 @app.route("/api/data", methods=["GET"])
 def get_data():
     """Latest telemetry snapshot for a station.
@@ -283,7 +335,9 @@ def get_data():
     with data_lock:
         if not latest_data[station_id]:
             latest_data[station_id] = cores[station_id].tick().to_api_dict()
-        return jsonify(latest_data[station_id])
+        response = dict(latest_data[station_id])
+    response["edge_network"] = network_state.snapshot()
+    return jsonify(response)
 
 
 @app.route("/api/telemetry/history", methods=["GET"])
@@ -583,9 +637,172 @@ def get_analysis_status(job_id):
     return jsonify({"job_id": job_id, "status": "loading"}), 202
 
 
+@app.route("/api/edge/status")
+def edge_status():
+    """Edge pipeline status: buffer stats, pipeline metrics, network state.
+    ---
+    responses:
+      200:
+        description: Edge status
+    """
+    try:
+        stats = edge_store.get_stats()
+        per_station = {sid.value: edge_store.get_stats(station_id=sid.value) for sid in cores}
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    net_mode = network_state.get_mode().value
+    sync_mode = "PAUSED" if net_mode == "OFFLINE" else ("THROTTLED" if net_mode == "DEGRADED" else "ACTIVE")
+
+    return jsonify({
+        "edge_active": True,
+        "network_mode": net_mode,
+        "sync": {"status": sync_mode},
+        "data_label": "Prototype / Simulated Station Data",
+        "network": network_state.snapshot(),
+        "buffer": stats,
+        "per_station": per_station,
+        "pipeline": edge_pipeline.get_metrics(),
+        "config": {
+            "normal_sample_every_n_ticks": 5,
+            "tick_interval_s": config.interval_seconds,
+        },
+    })
+
+
+@app.route("/api/edge/queue")
+def edge_queue():
+    """Returns current pending edge-buffer records grouped by priority.
+    ---
+    responses:
+      200:
+        description: Current pending queue grouped by priority
+    """
+    try:
+        stats = edge_store.get_stats()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
+    return jsonify({
+        "total_pending": stats["pending"]["total"],
+        "priorities": {
+            "P1": stats["pending"]["critical"],
+            "P2": stats["pending"]["moderate"],
+            "P3": stats["pending"]["normal"],
+        }
+    })
+
+
+@app.route("/api/edge/history")
+def edge_history():
+    """Returns recent records/events from the local edge buffer.
+    ---
+    parameters:
+      - name: limit
+        in: query
+        type: integer
+        required: false
+        default: 20
+    responses:
+      200:
+        description: Edge history
+    """
+    try:
+        limit = int(request.args.get("limit", 20))
+        history = edge_store.get_history(limit=limit)
+        return jsonify(history)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/edge/stats")
+def edge_stats():
+    """Returns total metrics for the edge buffer.
+    ---
+    responses:
+      200:
+        description: Total metrics for edge buffer
+    """
+    try:
+        stats = edge_store.get_stats()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
+    return jsonify({
+        "pending": stats["pending"]["total"],
+        "p1": stats["pending"]["critical"],
+        "p2": stats["pending"]["moderate"],
+        "p3": stats["pending"]["normal"],
+        "synced": stats["synced"]["total"],
+        "oldest_pending_age_seconds": stats["oldest_pending_age_s"],
+        "database_size_bytes": stats["db_size_bytes"],
+    })
+
+
+@app.route("/api/sync/status")
+def sync_status():
+    """Priority sync worker status: cycles, records synced/failed, backoff, history.
+    ---
+    responses:
+      200:
+        description: Sync worker metrics and central store stats
+    """
+    try:
+        metrics = sync_worker.get_metrics()
+        net_mode = metrics.get("network_mode", "ONLINE")
+        sync_state = "PAUSED" if net_mode == "OFFLINE" else ("THROTTLED" if net_mode == "DEGRADED" else "ACTIVE")
+        metrics["sync_status"] = sync_state
+        return jsonify(metrics)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/resilience/controls", methods=["GET"])
+def resilience_controls():
+    """Get the current resilience testing controls state.
+    ---
+    responses:
+      200:
+        description: Current state of simulated failures
+    """
+    return jsonify(central_store.stats())
+
+
+@app.route("/api/resilience/inject", methods=["POST"])
+def resilience_inject():
+    """Inject transmission failures or latency into the central store.
+    ---
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            failures:
+              type: integer
+              description: Number of consecutive sync failures to simulate
+            latency_s:
+              type: number
+              description: Artificial latency per record in seconds
+    responses:
+      200:
+        description: Updated simulation controls
+    """
+    data = request.get_json(silent=True) or {}
+    
+    if "failures" in data:
+        central_store.inject_failures(int(data["failures"]))
+    
+    if "latency_s" in data:
+        central_store.set_latency(float(data["latency_s"]))
+        
+    return jsonify(central_store.stats())
+
+
 if __name__ == "__main__":
     sim_thread = threading.Thread(target=run_simulator_background, daemon=True)
     sim_thread.start()
+    sync_worker.start()
 
     time.sleep(0.1)
 

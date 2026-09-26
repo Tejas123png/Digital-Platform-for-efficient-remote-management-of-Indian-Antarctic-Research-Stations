@@ -106,3 +106,63 @@ export async function fetchAnomalyEvents(station = "MAITRI") {
   if (!response.ok) return [];
   return await response.json();
 }
+
+/**
+ * Fetch Edge Computing Status
+ */
+export async function fetchEdgeStatus() {
+  const response = await fetch(`${API_URL}/api/edge/status`, {
+    method: "GET",
+    headers: { "Accept": "application/json" }
+  });
+  if (!response.ok) throw new Error("Failed to fetch edge status");
+  return await response.json();
+}
+
+/**
+ * Fetch Edge Queue Priorities
+ */
+export async function fetchEdgeQueue() {
+  const response = await fetch(`${API_URL}/api/edge/queue`, {
+    method: "GET",
+    headers: { "Accept": "application/json" }
+  });
+  if (!response.ok) throw new Error("Failed to fetch edge queue");
+  return await response.json();
+}
+
+/**
+ * Fetch Edge History
+ */
+export async function fetchEdgeHistory(limit = 20) {
+  const response = await fetch(`${API_URL}/api/edge/history?limit=${limit}`, {
+    method: "GET",
+    headers: { "Accept": "application/json" }
+  });
+  if (!response.ok) throw new Error("Failed to fetch edge history");
+  return await response.json();
+}
+
+/**
+ * Fetch Edge Stats
+ */
+export async function fetchEdgeStats() {
+  const response = await fetch(`${API_URL}/api/edge/stats`, {
+    method: "GET",
+    headers: { "Accept": "application/json" }
+  });
+  if (!response.ok) throw new Error("Failed to fetch edge stats");
+  return await response.json();
+}
+
+/**
+ * Fetch Sync Status
+ */
+export async function fetchSyncStatus() {
+  const response = await fetch(`${API_URL}/api/sync/status`, {
+    method: "GET",
+    headers: { "Accept": "application/json" }
+  });
+  if (!response.ok) throw new Error("Failed to fetch sync status");
+  return await response.json();
+}

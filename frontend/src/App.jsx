@@ -9,6 +9,7 @@ import AlertPanel    from './components/AlertPanel';
 import WeatherPanel  from './components/WeatherPanel';
 import ChartsSection from './components/ChartsSection';
 import LogsView      from './components/LogsView';
+import EdgeComputingPanel from './components/EdgeComputingPanel';
 
 import { fetchStationData, fetchAnomalyEvents } from './services/api';
 import { detectAlerts }     from './data/stationRooms';
@@ -204,6 +205,8 @@ export default function App() {
 
         {/* RIGHT PANEL — Alerts + Logistics */}
         <div className="ps-right">
+          <EdgeComputingPanel station={activeStation} />
+          
           <AlertPanel station={activeStation} alerts={alerts} anomalyEvents={anomalyEvents[activeStation] || []} onAlertClick={handleAlertClick} />
           
           <div className="ps-right-section ps-logistics-section">

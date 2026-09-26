@@ -126,6 +126,16 @@ export default function AlertPanel({ alerts, anomalyEvents = [], onAlertClick, s
   const [eventAnalyses, setEventAnalyses] = useState({}); // { eventId: { status, data } }
   const [activeModalEventId, setActiveModalEventId] = useState(null);
 
+  // Full alert history modal
+  const [allHistoryOpen, setAllHistoryOpen] = useState(false);
+
+  // Close full-history modal on Escape
+  useEffect(() => {
+    function handleEsc(e) { if (e.key === 'Escape') setAllHistoryOpen(false); }
+    if (allHistoryOpen) window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [allHistoryOpen]);
+
   // --- Active alert analysis (unchanged logic) ---
   const handleAnalyze = useCallback(async (alert) => {
     const key = alert.id;
@@ -257,7 +267,7 @@ export default function AlertPanel({ alerts, anomalyEvents = [], onAlertClick, s
             </div>
           </div>
         ) : (
-          <div className="ps-alert-list">
+          <div className="ps-alert-list" style={{ maxHeight: '200px', overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'thin', scrollbarColor: 'var(--border) transparent' }}>
             {alerts.map((alert) => {
               const room = STATION_ROOMS.find((r) => r.id === alert.roomId);
               const analysis = analyses[alert.id];
@@ -320,98 +330,55 @@ export default function AlertPanel({ alerts, anomalyEvents = [], onAlertClick, s
       </div>
 
       {/* === ALERT HISTORY === */}
-      {hasHistory && (
-        <div className="ps-panel-section" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: '0 1 auto' }}>
-          <div className="ps-section-title" style={{ flexShrink: 0 }}>
-            Alert History
-            <span
-              style={{
-                marginLeft: 4,
-                background: 'var(--text-muted)',
-                color: '#fff',
-                fontSize: 9,
-                fontWeight: 700,
-                padding: '1px 5px',
-                borderRadius: 10,
-                opacity: 0.7,
-              }}
-            >
-              {historyEvents.length}
-            </span>
-          </div>
-          <div className="ps-alert-history-scroll">
-            <div className="ps-alert-list">
-              {historyEvents.map((evt) => {
-                const label = SCENARIO_LABELS[evt.type] || evt.type;
-                const evtAnalysis = eventAnalyses[evt.id];
-                const isAnalyzed = evtAnalysis?.status === 'done';
-
-                const timeStr = evt.started_at?.split(' ')[1] || '';
-                const endTimeStr = evt.ended_at?.split(' ')[1] || '';
-
-                // Determine severity for visual coding
-                const isCritical = ['GENERATOR_FAILURE', 'PUMP_FAILURE', 'EQUIPMENT_OVERHEAT', 'EXTREME_COLD', 'PRESSURE_DROP', 'POWER_GENERATION_DROP'].includes(evt.type);
-                const severityClass = isCritical ? 'critical' : 'warning';
-                const severityLabel = isCritical ? 'CRITICAL' : 'MODERATE';
-
-                return (
-                  <div key={evt.id} className="ps-alert-item-wrapper">
-                    <div className={`ps-alert-item ${severityClass}`} style={{ padding: '4px 6px', gap: '5px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
-                        <span className={`ps-severity-dot ${severityClass}`} />
-                      </div>
-                      <div className="ps-alert-content">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-                          <span className={`ps-severity-label ${severityClass}`}>{severityLabel}</span>
-                          <span style={{ fontSize: '9px', fontWeight: 'bold', color: 'var(--text-muted)' }}>• {station}</span>
-                          <span className={`ps-alert-status-badge ${isAnalyzed ? 'analyzed' : 'resolved'}`} style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '3px', background: 'var(--bg-card-hover)', color: 'var(--text-muted)', fontWeight: 600 }}>
-                            {isAnalyzed ? 'ANALYZED' : 'RESOLVED'}
-                          </span>
-                        </div>
-                        <div className="ps-alert-title" style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '1px' }}>
-                          {label}
-                        </div>
-                        <div className="ps-alert-desc" style={{ fontSize: '10px' }}>
-                          {timeStr}{endTimeStr ? ` → ${endTimeStr}` : ''}
-                        </div>
-                      </div>
-                      {/* Inline compact analyze/view btn */}
-                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-                        {(!evtAnalysis || evtAnalysis.status === 'loading') ? (
-                          <button
-                            className={`ps-ai-btn ${evtAnalysis?.status === 'loading' ? 'loading' : ''}`}
-                            onClick={(e) => { e.stopPropagation(); handleEventAnalyze(evt); }}
-                            disabled={evtAnalysis?.status === 'loading'}
-                            title="Analyze this resolved anomaly with AI"
-                            style={{ width: 'auto', padding: '3px 8px', fontSize: '10px' }}
-                          >
-                            {evtAnalysis?.status === 'loading' ? (
-                              <>
-                                <span className="ps-ai-spinner" style={{ width: 8, height: 8 }} />
-                              </>
-                            ) : (
-                              <>Analyze</>
-                            )}
-                          </button>
-                        ) : (
-                          <button
-                            className="ps-ai-details-btn"
-                            onClick={(e) => { e.stopPropagation(); setActiveModalEventId(evt.id); }}
-                            title="View full AI analysis"
-                            style={{ minWidth: 'auto', height: 'auto', padding: '3px 8px', fontSize: '10px' }}
-                          >
-                            View →
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+      <div className="ps-panel-section" style={{ display: 'flex', flexDirection: 'column', flex: '0 0 auto' }}>
+        <div className="ps-section-title" style={{ flexShrink: 0, marginBottom: '6px' }}>
+          Alert History
+          <span
+            style={{
+              marginLeft: 4,
+              background: 'var(--text-muted)',
+              color: '#fff',
+              fontSize: 9,
+              fontWeight: 700,
+              padding: '1px 5px',
+              borderRadius: 10,
+              opacity: 0.7,
+            }}
+          >
+            {historyEvents.length}
+          </span>
         </div>
-      )}
+
+        {/* ── VIEW ALL HISTORY button ── */}
+        <button
+          onClick={() => setAllHistoryOpen(true)}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            padding: '6px 0',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            borderRadius: '3px',
+            color: 'var(--accent-blue)',
+            fontSize: '10px',
+            fontWeight: '600',
+            letterSpacing: '0.05em',
+            cursor: 'pointer',
+            textTransform: 'uppercase',
+            transition: 'background 0.15s, border-color 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-card-hover)'; e.currentTarget.style.borderColor = 'var(--accent-blue)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-card)';       e.currentTarget.style.borderColor = 'var(--border)'; }}
+          title="View all alert history"
+        >
+          <span style={{ fontSize: '11px' }}>🗂</span>
+          Click to view alert history
+          <span style={{ fontSize: '11px' }}>→</span>
+        </button>
+      </div>
 
       {/* AI Modal for active alerts */}
       {activeModalAlertId && (
@@ -433,6 +400,190 @@ export default function AlertPanel({ alerts, anomalyEvents = [], onAlertClick, s
           analysis={eventAnalyses[activeModalEventId]}
           onClose={() => setActiveModalEventId(null)}
         />
+      )}
+
+      {/* ── FULL ALERT HISTORY MODAL ── */}
+      {allHistoryOpen && (
+        <div
+          onClick={() => setAllHistoryOpen(false)}
+          style={{
+            position: 'fixed', inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.65)',
+            zIndex: 3000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            animation: 'ps-fade-in 0.18s ease-out',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '620px',
+              maxHeight: '82vh',
+              backgroundColor: 'var(--bg-panel)',
+              border: '1px solid var(--border)',
+              borderRadius: '6px',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.9)',
+              display: 'flex', flexDirection: 'column',
+              overflow: 'hidden',
+              animation: 'ps-modal-up 0.22s ease-out',
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderBottom: '1px solid var(--border)',
+              flexShrink: 0,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px' }}>🗂</span>
+                <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.1em', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                  Alert History
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  ({anomalyEvents.length} records)
+                </span>
+              </div>
+              <button
+                onClick={() => setAllHistoryOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 2px' }}
+                title="Close"
+              >✕</button>
+            </div>
+
+            {/* Stats bar */}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              {[
+                { label: 'Total',    val: anomalyEvents.length,                                                                                   color: 'var(--text-secondary)' },
+                { label: 'Critical', val: anomalyEvents.filter(e => ['GENERATOR_FAILURE','PUMP_FAILURE','EQUIPMENT_OVERHEAT','EXTREME_COLD','PRESSURE_DROP','POWER_GENERATION_DROP'].includes(e.type)).length, color: 'var(--status-critical)' },
+                { label: 'Moderate', val: anomalyEvents.filter(e => !['GENERATOR_FAILURE','PUMP_FAILURE','EQUIPMENT_OVERHEAT','EXTREME_COLD','PRESSURE_DROP','POWER_GENERATION_DROP'].includes(e.type)).length, color: 'var(--status-warning)' },
+                { label: 'Resolved', val: anomalyEvents.filter(e => e.status === 'RESOLVED').length,                                             color: 'var(--status-normal)' },
+              ].map((s, i) => (
+                <div key={i} style={{ flex: 1, padding: '6px 8px', borderRight: i < 3 ? '1px solid var(--border)' : 'none', textAlign: 'center' }}>
+                  <div style={{ fontSize: '16px', fontFamily: 'var(--font-mono)', fontWeight: '700', color: s.color }}>{s.val}</div>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Column headers */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: '64px 1fr 60px 52px 90px',
+              gap: '4px', padding: '5px 14px',
+              borderBottom: '1px solid var(--border)',
+              fontSize: '9px', fontWeight: '700', letterSpacing: '0.08em',
+              color: 'var(--text-muted)', textTransform: 'uppercase',
+              flexShrink: 0,
+            }}>
+              <span>Time</span>
+              <span>Event</span>
+              <span>Station</span>
+              <span style={{ textAlign: 'center' }}>Status</span>
+              <span style={{ textAlign: 'center' }}>AI</span>
+            </div>
+
+            {/* Scrollable rows */}
+            <div style={{ overflowY: 'auto', flex: 1, padding: '4px 14px 10px' }}>
+              {anomalyEvents.length > 0 ? anomalyEvents.map(evt => {
+                const label = SCENARIO_LABELS[evt.type] || evt.type;
+                const timeStr = evt.started_at?.split(' ')[1] || evt.started_at || '';
+                const isCritical = ['GENERATOR_FAILURE','PUMP_FAILURE','EQUIPMENT_OVERHEAT','EXTREME_COLD','PRESSURE_DROP','POWER_GENERATION_DROP'].includes(evt.type);
+                const sevColor = isCritical ? 'var(--status-critical)' : 'var(--status-warning)';
+                const isResolved = evt.status === 'RESOLVED';
+                const evtAnalysis = eventAnalyses[evt.id];
+                const isLoading  = evtAnalysis?.status === 'loading';
+                const isDone     = evtAnalysis?.status === 'done' || evtAnalysis?.status === 'error';
+                return (
+                  <div key={evt.id} style={{
+                    display: 'grid', gridTemplateColumns: '64px 1fr 60px 52px 90px',
+                    gap: '4px', alignItems: 'center',
+                    padding: '5px 0',
+                    borderBottom: '1px solid var(--border-subtle)',
+                    fontSize: '11px',
+                  }}>
+                    <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{timeStr}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                      <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: sevColor, flexShrink: 0, display: 'inline-block' }} />
+                      <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+                    </div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{station}</span>
+                    <span style={{ textAlign: 'center', color: isResolved ? 'var(--status-normal)' : 'var(--status-warning)', fontWeight: '600', fontSize: '10px' }}>
+                      {isResolved ? '✓ Done' : 'Active'}
+                    </span>
+                    {/* AI Analyze / View button */}
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      {!isDone ? (
+                        <button
+                          onClick={e => { e.stopPropagation(); handleEventAnalyze(evt); }}
+                          disabled={isLoading}
+                          style={{
+                            padding: '2px 7px',
+                            fontSize: '9px', fontWeight: '700', letterSpacing: '0.04em',
+                            background: isLoading ? 'var(--bg-card)' : 'rgba(var(--accent-blue-rgb,59,130,246),0.12)',
+                            border: '1px solid var(--accent-blue)',
+                            borderRadius: '3px',
+                            color: 'var(--accent-blue)',
+                            cursor: isLoading ? 'default' : 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title="Run AI analysis on this event"
+                        >
+                          {isLoading ? (
+                            <><span className="ps-ai-spinner" style={{ width: 8, height: 8 }} /> …</>
+                          ) : (
+                            <>AI Analyze</>
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={e => { e.stopPropagation(); setActiveModalEventId(evt.id); }}
+                          style={{
+                            padding: '2px 7px',
+                            fontSize: '9px', fontWeight: '700', letterSpacing: '0.04em',
+                            background: 'rgba(var(--status-normal-rgb,34,197,94),0.10)',
+                            border: '1px solid var(--status-normal)',
+                            borderRadius: '3px',
+                            color: 'var(--status-normal)',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title="View AI analysis result"
+                        >
+                          View →
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '24px 0', fontSize: '11px' }}>No alert history records</div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '8px 14px',
+              borderTop: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              flexShrink: 0,
+            }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                Press <kbd style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 4px', fontSize: '9px' }}>Esc</kbd> or click outside to close
+              </span>
+              <button
+                onClick={() => setAllHistoryOpen(false)}
+                style={{ padding: '4px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '3px', color: 'var(--text-secondary)', fontSize: '10px', fontWeight: '600', letterSpacing: '0.05em', cursor: 'pointer', textTransform: 'uppercase', transition: 'background 0.15s' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card-hover)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}
+              >Close</button>
+            </div>
+          </div>
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes ps-fade-in  { from { opacity:0; }                                          to { opacity:1; } }
+            @keyframes ps-modal-up { from { opacity:0; transform:translateY(16px) scale(0.97); } to { opacity:1; transform:translateY(0) scale(1); } }
+          `}} />
+        </div>
       )}
     </>
   );

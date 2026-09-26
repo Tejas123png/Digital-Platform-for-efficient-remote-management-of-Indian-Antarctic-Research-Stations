@@ -1072,7 +1072,7 @@ body {
 
 /* ── ALERT HISTORY SCROLL CONTAINER ─── */
 .ps-alert-history-scroll {
-  max-height: 280px;
+  max-height: 200px;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;

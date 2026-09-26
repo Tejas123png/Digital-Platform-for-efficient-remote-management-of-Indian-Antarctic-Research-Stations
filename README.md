@@ -1,215 +1,194 @@
-# Antarctic Research Station Telemetry Dashboard
+# ❄️ PolarSync: Antarctic Station Management & Edge Computing System
 
-Live telemetry pipeline connecting a Python data simulation engine to a real-time React web dashboard.
+[![Python 3.13](https://img.shields.io/badge/Python-3.13-blue.svg)](https://www.python.org/)
+[![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://reactjs.org/)
+[![Vite 6](https://img.shields.io/badge/Vite-6-646cff.svg)](https://vitejs.dev/)
+[![SQLite WAL](https://img.shields.io/badge/Database-SQLite_WAL-003b57.svg)](https://www.sqlite.org/)
+[![Ollama AI](https://img.shields.io/badge/AI-Ollama_DeepSeek-orange.svg)](https://ollama.com/)
+
+**PolarSync** is an mission-critical telemetry, edge computing, and AI-powered station management system designed for extreme polar conditions at Antarctic research stations (**Maitri** and **Bharati**). 
+
+Operating in Antarctica presents severe engineering challenges: geomagnetic storms cause frequent satellite blackouts, temperatures drop below -50°C, and life-safety systems (Generators, Heating, Fuel) demand instant local response. PolarSync solves this with an **Edge-First Architecture**, ensuring zero data loss and strict priority synchronization even during total network blackouts.
 
 ---
 
-## Architecture Overview
+## 📸 Quick Overview
 
 ```text
-┌────────────────────────────────────────┐
-│   data_simulator.py (Python 3.13)      │
-│   ├── Background Daemon Thread         │
-│   │   ├── Multi-Station Simulation     │
-│   │   ├── Scenario & Anomaly Engine    │
-│   │   └── updates thread-safe cache    │
-│   │                                    │
-│   ├── ollama_service.py (AI Alerts)    │
-│   │                                    │
-│   └── Flask REST API (Port 5000)       │
-│       ├── GET /api/health              │
-│       ├── GET /api/data  ◄─────────────┼───┐
-│       ├── GET /api/telemetry/history   │   │
-│       ├── GET /api/anomaly-events      │   │
-│       ├── GET /api/scenario-status     │   │
-│       ├── POST /api/alerts/analyze     │   │
-│       └── GET /api/alerts/analyze/<id> │   │
-└────────────────────────────────────────┘   │
-                                             │ HTTP GET/POST (fetch every 2s)
-                                             │ CORS enabled
-┌────────────────────────────────────────┐   │
-│   React Frontend (Vite • Port 3000)    │   │
-│   ├── src/App.jsx ─────────────────────┴───┘
-│   ├── src/components/
-│   │   ├── Header.jsx (Connection Badge, Network, & Station Select)
-│   │   ├── LeftPanel.jsx & WeatherPanel.jsx (Weather & Metrics)
-│   │   ├── DigitalTwin.jsx & BharatiDigitalTwin.jsx (2D Interactive Maps)
-│   │   ├── AlertPanel.jsx (Dynamic Alerts)
-│   │   ├── LogisticsPanel.jsx (Resource Tracking)
-│   │   ├── ScenarioBanner.jsx (Active Anomalies)
-│   │   ├── RoomInfoPanel.jsx (Modal Room Inspector)
-│   │   ├── ChartsSection.jsx (Chart.js Power & Diagnostics)
-│   │   └── LogsView.jsx (Real-time Derived Event Stream)
-│   ├── src/three/
-│   │   └── Station3DView.jsx (Three.js 3D Model View)
-│   └── src/index.css (Glassmorphic Dark Theme)
++-----------------------------------------------------------------------------------+
+| POLAR SYNC   MAITRI                     [● SIMULATOR ONLINE] [⇄ SYNC ACTIVE ›]    |
++-----------------------------------------------------------------------------------+
+|  STATION STATUS  |          2D INTERACTIVE DIGITAL TWIN          | PRIORITY QUEUE |
+|  ENERGY 471 kWh  |       [Control] [Living] [Lab] [Can] [Med]    | P1 Crit    0   |
+|  BATTERY  62%    |       [Generator Room] [Fuel Storage]         | P2 Mod     0   |
+|  FUEL      0% ⚠  |                                               | P3 Norm    0   |
+|  POWER   80.9 kW |       ---------------------------------       | ✓ SYNC COMPLETE|
+|                  |       POWER: GENERATION VS CONSUMPTION        | EDGE HISTORY   |
+|  ENVIRONMENT     |       DIAGNOSTICS: LOAD & BATTERY             | ACTIVE ALERTS  |
+|  TEMP   31.8°C   |       EVENT LOG STREAM                        | ALERT HISTORY  |
++-----------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 1. Prerequisites & Installation
+## 🌟 Key System Features
 
-### Backend Dependencies (Python 3.13)
-Install Flask, Flask-CORS, NumPy, and Ollama (for AI alerts):
+### ⚡ 1. Local Edge Computing & Resilience Layer
+* **Offline Sovereignty:** Data processing, anomaly detection, and alert classification occur 100% locally on-station.
+* **Crash-Safe SQLite WAL Storage (`edge_storage.py`):** Multi-threaded local database operating in Write-Ahead Logging (WAL) mode guarantees zero data loss during sudden power outages.
+* **Priority-Ordered Buffer ($P1 \rightarrow P2 \rightarrow P3$):**
+  * **P1 CRITICAL:** Life-safety alerts (Generator Failure, Fuel Depletion). Syncs first under all conditions.
+  * **P2 MODERATE:** Operational warnings (Equipment Overheat, High Heating Load).
+  * **P3 NORMAL:** Routine periodic telemetry samples.
+* **Bandwidth-Adaptive Sync Worker (`sync_worker.py`):**
+  * **ONLINE Mode (80 Mbps):** Full transmission batching (20 records/cycle, all priorities).
+  * **DEGRADED Mode (Storm):** Restricts sync to **P1 & P2 records only**, dropping routine P3 telemetry to save satellite bandwidth.
+  * **OFFLINE Mode (Blackout):** Zero network calls. Local SQLite buffer retains all telemetry records until connection is restored.
+* **Interactive Header Sync Control `[ ⇄ SYNC ACTIVE › ]`:** Real-time clickable dashboard control opening a detailed live sync status popup (Network Mode, SQLite Buffer size, Pending queue, Oldest pending record, Recent activity log).
 
+### 🤖 2. Local AI Anomaly Diagnostics (Ollama / DeepSeek)
+* **On-Station AI Diagnosis (`ollama_service.py`):** Integrates local LLMs to diagnose telemetry anomalies and propose actionable resolution steps without cloud latency.
+* **Asynchronous Analysis Queue:** Runs AI inference in non-blocking background threads via `/api/alerts/analyze`.
+* **Full Alert History Modal:** View all historical alerts in a searchable, 5-column table complete with inline **`AI Analyze`** buttons.
+
+### 🏢 3. Dual-Station Digital Twin & Infrastructure Monitoring
+* **Multi-Station Support:** Instant switching between **Maitri Station** (Schirmacher Oasis) and **Bharati Station** (Larsemann Hills).
+* **2D & 3D Interactive Floor Maps:** Click on any room (Generator Room, Living Quarters, Laboratory, Medical Bay, Fuel Tanks) to inspect localized telemetry and room health.
+* **Logistics & Inventory Tracking:** Real-time stock degradation predictions for **Food**, **Medicine**, and **Fuel**, including days remaining until resupply.
+
+---
+
+## 🏗 System Architecture
+
+```text
+┌────────────────────────────────────────────────────────┐
+│             Data Simulation Daemon                     │
+│             (data_simulator.py / Python 3.13)          │
+│   ├── Generates Maitri & Bharati Telemetry Ticks       │
+│   └── Evaluates Weather & Anomaly Scenarios            │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           v
+┌────────────────────────────────────────────────────────┐
+│             Edge Pipeline & Severity Classifier        │
+│             (edge_pipeline.py)                         │
+│   ├── Maps Alerts to P1 CRITICAL / P2 MODERATE / P3     │
+│   └── Tracks RAISED & CLEARED Alert Event Diffs        │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           v
+┌────────────────────────────────────────────────────────┐
+│             SQLite WAL Database Buffer                 │
+│             (edge_storage.py / edge_buffer.db)         │
+│   ├── PRAGMA journal_mode = WAL                        │
+│   └── Composite Index (idx_pending_order)              │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+              v                         v
+┌───────────────────────────┐ ┌───────────────────────────┐
+│ Priority Sync Worker      │ │ Flask REST API            │
+│ (sync_worker.py)          │ │ (Port 5000)               │
+│ ├── ONLINE (P1, P2, P3)   │ │ ├── GET  /api/data        │
+│ ├── DEGRADED (P1, P2)     │ │ ├── GET  /api/edge/status │
+│ └── OFFLINE (Buffer Grow) │ │ └── POST /api/alerts/...  │
+└─────────────┬─────────────┘ └─────────────┬─────────────┘
+              │                             │
+              v                             v
+┌────────────────────────────────────────────────────────┐
+│             React Dashboard & Command Center           │
+│             (Vite • Port 3000)                         │
+│   ├── Interactive [ ⇄ SYNC ACTIVE › ] Popup            │
+│   ├── Permanent Priority Queue & Edge History          │
+│   ├── Full Alert History Modal with AI Diagnostics     │
+│   └── Chart.js Power & Environmental Trends            │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🚀 Quick Start Guide
+
+### Step 1: Prerequisites
+Ensure you have **Python 3.13+** and **Node.js 18+** installed.
+
+### Step 2: Start Backend Telemetry & Sync Engine
 ```bash
-cd C:\PolarSync
+# Install Python dependencies
 py -3.13 -m pip install -r requirements.txt
-```
 
-*(Or individually via `py -3.13 -m pip install flask flask-cors numpy ollama`)*
-
-*(Optional)* To enable the AI alert analysis, make sure you have the [Ollama](https://ollama.com/) server running locally with the required model.
-
-### Frontend Dependencies (Node.js & npm)
-Install React, Vite, and Chart.js dependencies:
-
-```bash
-cd C:\PolarSync\frontend
-npm install
-```
-
----
-
-## 2. Running the System
-
-### Terminal 1: Start the Python Simulator & Flask API
-```bash
-cd C:\PolarSync
+# Launch Backend Simulation & Flask REST Server (Port 5000)
 py -3.13 data_simulator.py
 ```
+*The simulator spawns the edge pipeline, SQLite buffer, sync worker, and Flask API server at `http://localhost:5000`.*
 
-- Spawns the telemetry simulator in a background daemon thread.
-- Streams live JSON records to stdout for CLI monitoring and debugging.
-- Exposes the Flask REST API server on **`http://localhost:5000`**.
-- Configurable interval:
-  - Default: 2 seconds (intended simulation interval for demo).
-  - For 60-second updates: pass `--prod` or set `$env:INTERVAL_SECONDS="60"`.
-- Uses `SIMULATION_TIME_MULTIPLIER` for fast-forwarding inventory simulations.
-
-### Terminal 2: Start the React Frontend (Vite)
+### Step 3: Start React Dashboard
 ```bash
-cd C:\PolarSync\frontend
+# Open a new terminal window
+cd frontend
+
+# Install Node modules
+npm install
+
+# Start Vite Dev Server (Port 3000)
 npm run dev
 ```
+*Open your browser and navigate to **`http://localhost:3000`**.*
 
-Open your browser and navigate to:
-**`http://localhost:3000`**
+---
 
-To produce an optimized production bundle:
-```bash
-npm run build
+## 📡 API Endpoint Reference
+
+| HTTP Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/health` | Backend service health check. |
+| `GET` | `/api/data?station=MAITRI` | Latest telemetry snapshot for the specified station. |
+| `GET` | `/api/telemetry/history?station=MAITRI` | 30-point telemetry history array for charts. |
+| `GET` | `/api/anomaly-events?station=MAITRI` | Recent simulated active station anomalies. |
+| `GET` | `/api/edge/status` | Edge computing network state, sync state, and processing health. |
+| `GET` | `/api/edge/queue` | Priority queue counts (P1 Pending, P2 Pending, P3 Pending). |
+| `GET` | `/api/edge/history?limit=20` | Recent telemetry transmission log from local SQLite. |
+| `POST` | `/api/alerts/analyze` | Dispatches an asynchronous local AI diagnosis job (Ollama). |
+| `GET` | `/api/alerts/analyze/<job_id>` | Polls status/result of an AI analysis job. |
+
+---
+
+## 📁 Repository Structure
+
+```text
+PolarSync/
+├── data_simulator.py       # Main telemetry daemon & Flask API backend
+├── edge_pipeline.py        # Edge anomaly detection & severity classifier
+├── edge_storage.py         # SQLite WAL thread-safe priority database buffer
+├── sync_worker.py          # Bandwidth-adaptive priority sync engine
+├── network_state.py        # Network mode controller (ONLINE / DEGRADED / OFFLINE)
+├── ollama_service.py       # Local AI analysis engine integration
+├── simulation_core.py      # Station physical simulation math & scenarios
+├── requirements.txt        # Python library dependencies
+├── PolarSync_Edge_Computing_and_DB_Report.pdf # Executive PDF Technical Report
+└── frontend/               # React Vite Web Dashboard
+    ├── src/
+    │   ├── App.jsx         # Main Dashboard Layout Shell
+    │   ├── index.css       # Glassmorphic Dark Industrial Command Center Styles
+    │   └── components/
+    │       ├── Header.jsx               # Top Bar with [ ⇄ SYNC ACTIVE › ] button
+    │       ├── EdgeComputingControl.jsx # Header Sync Button & Live Dropdown Popup
+    │       ├── EdgeComputingPanel.jsx   # Permanent Priority Queue Sidebar
+    │       ├── AlertPanel.jsx           # Active Alerts & Full Alert History Modal
+    │       ├── DigitalTwin.jsx          # Maitri 2D Map Inspector
+    │       └── BharatiDigitalTwin.jsx   # Bharati 2D Map Inspector
 ```
 
 ---
 
-## 3. API Endpoint Documentation
+## 📄 Technical PDF Report
 
-### `GET /api/health`
-Health check endpoint to verify that the Flask server is running.
-- **URL**: `http://localhost:5000/api/health`
+For an executive deep-dive into the mathematical and architectural design of PolarSync's Edge Layer and SQLite database, refer to the included technical report:
 
-### `GET /api/data`
-Returns the most recent station telemetry snapshot.
-- **URL**: `http://localhost:5000/api/data?station=MAITRI`
-
-### `GET /api/telemetry/history`
-Returns recent telemetry history for trend analysis.
-- **URL**: `http://localhost:5000/api/telemetry/history?station=MAITRI`
-
-### `GET /api/anomaly-events`
-Returns recent simulated anomaly events for the selected station.
-- **URL**: `http://localhost:5000/api/anomaly-events?station=MAITRI`
-
-### `GET /api/scenario-status`
-Returns currently active scenarios (e.g. `EXTREME_COLD`, `COMMUNICATION_FAILURE`) and their remaining duration ticks.
-- **URL**: `http://localhost:5000/api/scenario-status?station=MAITRI`
-
-### `POST /api/alerts/analyze`
-Starts an async AI-powered alert analysis job via local Ollama.
-- **URL**: `http://localhost:5000/api/alerts/analyze`
-- **Body Schema**:
-  ```json
-  {
-    "station_id": "MAITRI",
-    "alert_id": "low_battery",
-    "alert_message": "LOW BATTERY RESERVE",
-    "severity": "critical",
-    "telemetry_context": {...}
-  }
-  ```
-- **Returns**: `{"job_id": "uuid-here"}`
-
-### `GET /api/alerts/analyze/<job_id>`
-Poll the background AI analysis job to get the completed response without timing out.
-- **URL**: `http://localhost:5000/api/alerts/analyze/<job_id>`
+📄 **[PolarSync_Edge_Computing_and_DB_Report.pdf](PolarSync_Edge_Computing_and_DB_Report.pdf)**
 
 ---
 
-## 4. Telemetry Field Mapping
-
-| Field | Description | Display / Treatment |
-|---|---|---|
-| `energy` | Station grid reserve | Value (kWh) & capacity progress bar |
-| `generator_load` | Turbine load percentage | Value (%) & load warning indicator |
-| `power_generation` | Current generation rate | Value (kW) & plotted on Power Chart |
-| `power_consumption` | Current station load | Value (kW) & plotted on Power Chart |
-| `fuel_level` | Sub-surface fuel bunker level | Value (%) & level bar |
-| `battery_soc` | Li-FePO4 State of Charge | Value (%) & reserve status |
-| `heating` | Habitat climate thermal output | Value (kW) & heat output bar |
-| `generator_health` | Generator operational health | Value (%) in summary bar |
-| `pump_status` | Primary cooling pump state | `1` = Operational, `0` = Offline |
-| `equipment_temperature`| Core equipment temperature | Value (°C) & plotted on Diagnostics Chart |
-| `vibration` | Piezo vibration sensor reading | Value (mm/s) & plotted on Diagnostics Chart |
-| `runtime` | Generator runtime counter | Total elapsed hours/cycles |
-| `timestamp` | Simulation timestamp | Displayed in "Last Updated" |
-| `food_stock_kg` | Food supply inventory | Value (kg) |
-| `medicine_stock_units`| Medicine inventory | Value (units) |
-| `network_status` | Network Status (NORMAL/SLOW/DEGRADED) | Network Badge Indicator |
-| `network_bandwidth` | Current Network Bandwidth | Value (Mbps) |
-| `network_latency` | Network Latency | Value (ms) |
-| `packet_loss` | Network Packet Loss | Value (%) |
-| `signal_strength` | Network Signal Strength | Value (%) |
-
-*(Inventory variables such as days remaining, daily consumption, risk, storage temperatures, and status are also simulated and mapped).*
-
----
-
-## 5. End-to-End Data Flow
-
-1. **Continuous Simulation Worker**:
-   - `data_simulator.py` runs `run_simulator_background()` in a daemon thread.
-   - Every interval, it advances the deterministic `simulation_core` for each station (MAITRI and BHARATI), applying weather effects and random anomaly scenarios.
-   - Safely locks and updates the shared `latest_data` and `telemetry_history` dicts.
-
-2. **Flask REST Service**:
-   - Runs on port 5000. Routes are station-aware (via `?station=MAITRI`).
-   - `POST /api/alerts/analyze` kicks off non-blocking background analysis using Ollama and returns a job ID to the frontend to prevent timeouts.
-
-3. **Frontend Polling & Rendering**:
-   - The React application polls `GET /api/data` every 2000ms for the currently active station.
-   - Supports switching between **MAITRI** and **BHARATI**, rendering distinct 2D maps, unique 3D visualizers, logistics panels, scenario banners, and event logs.
-   - Telemetry history is maintained for each station independently for instant switching.
-
----
-
-## 6. Troubleshooting & FAQs
-
-### Q: The frontend shows "Simulator Disconnected"
-- **Check if Flask is running**: Open `http://localhost:5000/api/health` in your browser.
-- **Port Conflict**: Check if another process is holding port 5000.
-
-### Q: What about CORS errors?
-- Flask-CORS is configured globally. This allows cross-origin requests from the Vite frontend (`http://localhost:3000`).
-
-### Q: Why do the charts cap at 30 points?
-- To ensure optimal client-side performance and avoid memory leaks, the React `history` buffer keeps the latest 30 telemetry points.
-
-### Q: How can I adjust the simulation speed?
-- Default simulation interval is 2 seconds (live demo).
-- You can pass `--prod` to stream updates every 60 seconds.
-- You can also set `SIMULATION_TIME_MULTIPLIER` (e.g. `SIMULATION_TIME_MULTIPLIER=60`) to accelerate simulated inventory consumption independently of the real-time polling interval.
-
-### Q: Why are AI Alert Analytics failing?
-- Ensure that the Ollama package is installed (`pip install ollama`).
-- Check if your Ollama server is running locally and has the required language model downloaded.
+## 🛠 License & Credits
+Built for Antarctic Station Management & Resilient Remote Systems Engineering.

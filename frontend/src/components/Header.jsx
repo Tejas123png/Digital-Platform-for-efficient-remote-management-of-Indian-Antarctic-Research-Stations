@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { STATION_CONFIG } from '../data/stationRooms';
+import EdgeComputingControl from './EdgeComputingControl';
 
 export default function Header({
   connectionStatus,
@@ -85,6 +86,7 @@ export default function Header({
           <span className="ps-status-dot" />
           {connLabel}
         </div>
+        <EdgeComputingControl />
 
         <div className={`ps-network-badge ${netClass}`} title={`Network Status: ${statusText}`}>
           <span className="ps-net-icon">⇅</span>
