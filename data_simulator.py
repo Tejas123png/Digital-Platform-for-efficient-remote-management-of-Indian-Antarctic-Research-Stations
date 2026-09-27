@@ -3,6 +3,7 @@ import random
 import threading
 import time
 import uuid
+import os
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -810,4 +811,4 @@ if __name__ == "__main__":
     print("* Starting Flask API server on http://127.0.0.1:5000")
     print("* Swagger UI available at http://127.0.0.1:5000/apidocs")
 
-    app.run(host="0.0.0.0", port=5000, debug=False)
+app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
