@@ -4,7 +4,7 @@ import WeatherCards from './WeatherCards';
 import WeatherCharts from './WeatherCharts';
 import WeatherSummary from './WeatherSummary';
 
-export default function WeatherPanel({ station = 'MAITRI' }) {
+export default React.memo(function WeatherPanel({ station = 'MAITRI' }) {
   const [data, setData] = useState(null);
   const [timeRange, setTimeRange] = useState('24H');
   const [loading, setLoading] = useState(true);
@@ -82,4 +82,4 @@ export default function WeatherPanel({ station = 'MAITRI' }) {
       <WeatherSummary current={data.current} stats={data.stats} />
     </div>
   );
-}
+});

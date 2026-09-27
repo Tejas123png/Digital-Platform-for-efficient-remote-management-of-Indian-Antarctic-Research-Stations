@@ -90,7 +90,7 @@ const ROOM_ZONES = [
   },
 ];
 
-export default function DigitalTwin({ stationData, selectedRoom, onRoomSelect, alerts }) {
+export default React.memo(function DigitalTwin({ stationData, selectedRoom, onRoomSelect, alerts }) {
   const getRoomStatus = (roomId) => {
     const room = STATION_ROOMS.find((r) => r.id === roomId);
     if (!room || !stationData) return 'unknown';
@@ -178,4 +178,4 @@ export default function DigitalTwin({ stationData, selectedRoom, onRoomSelect, a
       </div>
     </div>
   );
-}
+});

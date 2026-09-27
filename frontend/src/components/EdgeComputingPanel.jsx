@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { fetchEdgeStatus, fetchEdgeQueue, fetchEdgeHistory, fetchSyncStatus } from '../services/api';
 
-export default function EdgeComputingPanel({ station }) {
+export default React.memo(function EdgeComputingPanel({ station }) {
   const [edgeStatus, setEdgeStatus] = useState(null);
   const [edgeQueue, setEdgeQueue] = useState(null);
   const [edgeHistory, setEdgeHistory] = useState([]);
@@ -139,5 +139,5 @@ export default function EdgeComputingPanel({ station }) {
       <style dangerouslySetInnerHTML={{__html: `@keyframes spin { 100% { transform: rotate(360deg); } }`}} />
     </>
   );
-}
+});
 

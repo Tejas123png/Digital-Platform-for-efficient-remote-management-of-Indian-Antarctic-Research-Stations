@@ -136,7 +136,7 @@ function Section({ title, children }) {
 }
 
 /* ── Main Export ────────────────────────────────────────── */
-export default function LeftPanel({ data, alerts }) {
+export default React.memo(function LeftPanel({ data, alerts }) {
   const d = data || {};
 
   return (
@@ -169,4 +169,4 @@ export default function LeftPanel({ data, alerts }) {
 
     </div>
   );
-}
+});

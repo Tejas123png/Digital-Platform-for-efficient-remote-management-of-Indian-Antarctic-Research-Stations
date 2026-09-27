@@ -81,7 +81,7 @@ function LineChart({ config }) {
   return <canvas ref={canvasRef} />;
 }
 
-export default function ChartsSection({ history }) {
+export default React.memo(function ChartsSection({ history }) {
   const labels = history.map((d) => {
     const ts = d.timestamp?.split(' ')[1];
     return ts ? ts.slice(0, 5) : '';
@@ -140,4 +140,4 @@ export default function ChartsSection({ history }) {
       </div>
     </>
   );
-}
+});

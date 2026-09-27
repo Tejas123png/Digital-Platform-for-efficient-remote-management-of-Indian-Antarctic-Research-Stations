@@ -226,7 +226,7 @@ const BHARATI_ROOM_ZONES = [
   },
 ];
 
-export default function BharatiDigitalTwin({
+export default React.memo(function BharatiDigitalTwin({
   stationData: propStationData,
   selectedRoom,
   onRoomSelect,
@@ -391,4 +391,4 @@ export default function BharatiDigitalTwin({
       </div>
     </div>
   );
-}
+});
