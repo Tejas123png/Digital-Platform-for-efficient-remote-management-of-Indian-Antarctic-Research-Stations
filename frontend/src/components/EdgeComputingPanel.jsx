@@ -71,21 +71,21 @@ export default function EdgeComputingPanel({ station }) {
         <div style={{ padding: '4px 12px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px' }}>
-              <div style={{ width: '50px', color: 'var(--status-critical)' }}>P1 Crit</div>
+              <div style={{ width: '50px', color: 'var(--status-critical)' }}>P1 Critical</div>
               <div style={{ flex: 1, backgroundColor: 'var(--bg-panel-2)', height: '6px', margin: '0 8px', borderRadius: '3px', overflow: 'hidden' }}>
                 <div style={{ width: `${(p1 / maxQ) * 100}%`, height: '100%', backgroundColor: 'var(--status-critical)', transition: 'width 0.3s ease' }} />
               </div>
               <div style={{ width: '20px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{p1}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px' }}>
-              <div style={{ width: '50px', color: 'var(--status-warning)' }}>P2 Mod</div>
+              <div style={{ width: '50px', color: 'var(--status-warning)' }}>P2 Moderate</div>
               <div style={{ flex: 1, backgroundColor: 'var(--bg-panel-2)', height: '6px', margin: '0 8px', borderRadius: '3px', overflow: 'hidden' }}>
                 <div style={{ width: `${(p2 / maxQ) * 100}%`, height: '100%', backgroundColor: 'var(--status-warning)', transition: 'width 0.3s ease' }} />
               </div>
               <div style={{ width: '20px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{p2}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px' }}>
-              <div style={{ width: '50px', color: 'var(--status-normal)' }}>P3 Norm</div>
+              <div style={{ width: '50px', color: 'var(--status-normal)' }}>P3 Normal</div>
               <div style={{ flex: 1, backgroundColor: 'var(--bg-panel-2)', height: '6px', margin: '0 8px', borderRadius: '3px', overflow: 'hidden' }}>
                 <div style={{ width: `${(p3 / maxQ) * 100}%`, height: '100%', backgroundColor: 'var(--status-normal)', transition: 'width 0.3s ease' }} />
               </div>

@@ -357,7 +357,7 @@ export const TELEMETRY_LABELS = {
   humidity: { label: 'Humidity', unit: '%', precision: 1 },
 };
 
-export const ALERT_RULES = [
+const ALERT_RULES = [
   {
     id: 'gen_overload',
     field: 'generator_load',
@@ -441,9 +441,6 @@ export const ALERT_RULES = [
   },
 ];
 
-export function getRoomById(id) {
-  return STATION_ROOMS.find((r) => r.id === id) || null;
-}
 
 export function detectAlerts(data) {
   if (!data) return [];

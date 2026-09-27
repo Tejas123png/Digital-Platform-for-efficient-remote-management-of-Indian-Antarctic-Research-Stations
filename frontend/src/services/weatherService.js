@@ -108,5 +108,3 @@ export async function fetchWeatherData(stationId, timeRange = '24H') {
     allObservations: filtered // available if needed for anomaly engine
   };
 }
-
-export default { fetchWeatherData };

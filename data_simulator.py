@@ -217,7 +217,7 @@ def run_simulator_background():
                         snapshot["timestamp"] = data.get("timestamp")
                         engine["current_event"]["snapshots"].append(snapshot)
 
-                    print(json.dumps(data, separators=(",", ":")), flush=True)
+
             time.sleep(config.interval_seconds)
     except Exception as e:
         print(f"Simulator error in background thread: {e}", flush=True)

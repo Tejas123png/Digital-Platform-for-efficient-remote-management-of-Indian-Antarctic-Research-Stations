@@ -18,7 +18,7 @@ import { API_URL } from '../services/api';
 // Set to true to display visual debug overlays with bounding boxes and coords
 const DEBUG = false;
 
-export const BHARATI_ROOM_ZONES = [
+const BHARATI_ROOM_ZONES = [
   {
     id: 'comms',
     name: 'Communication Room',

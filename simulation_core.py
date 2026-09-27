@@ -8,7 +8,7 @@ scenario engine, edge buffering) build on top of this module.
 
 import os
 import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, Dict
@@ -666,9 +666,6 @@ class SimulationCore:
             del self.state.active_scenarios[scenario_type]
             self._end_scenario_effects(scenario_type)
 
-    def stop_all_scenarios(self) -> None:
-        for scenario_type in list(self.state.active_scenarios.keys()):
-            self.stop_scenario(scenario_type)
 
     def get_active_scenarios(self) -> dict:
         return dict(self.state.active_scenarios)

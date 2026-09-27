@@ -27,30 +27,7 @@ export async function fetchStationData(station = "MAITRI") {
   return await response.json();
 }
 
-export const getStationData = fetchStationData;
 
-/**
- * Fetch the latest telemetry snapshot specifically for Bharati station
- * @returns {Promise<Object>} Telemetry record for Bharati
- */
-export async function fetchBharatiData() {
-  return fetchStationData("BHARATI");
-}
-
-/**
- * Check if the Flask API server is alive
- * @returns {Promise<boolean>}
- */
-export async function checkHealth() {
-  try {
-    const response = await fetch(`${API_URL}/api/health`, {
-      method: "GET"
-    });
-    return response.ok;
-  } catch (error) {
-    return false;
-  }
-}
 
 /**
  * Request AI analysis for a specific alert

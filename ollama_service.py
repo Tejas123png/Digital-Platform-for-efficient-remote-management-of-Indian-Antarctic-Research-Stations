@@ -18,8 +18,6 @@ from threading import Thread
 
 # ── Configuration ────────────────────────────────────────────
 OLLAMA_MODEL   = os.environ.get("OLLAMA_MODEL",   "qwen3:1.7b")
-OLLAMA_HOST    = os.environ.get("OLLAMA_HOST",     "http://localhost:11434")
-OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "60"))
 
 # ── System prompt ────────────────────────────────────────────
 SYSTEM_PROMPT = """You are an AI operations assistant for Maitri, an Indian Antarctic research station located in the Schirmacher Oasis, Antarctica.
@@ -166,7 +164,7 @@ def analyze_alert(alert_context: dict) -> dict:
     Returns a structured dict.  Never raises — always returns a result.
     """
     try:
-        from ollama import chat, ResponseError
+        from ollama import chat
     except ImportError:
         return _fallback_response(
             "Ollama Python package is not installed. Run: pip install ollama"
