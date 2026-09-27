@@ -47,7 +47,9 @@ export default function Header({
     <header className="ps-header">
       {/* Brand */}
       <div className="ps-header__brand">
-        <div className="ps-header__logo">❄</div>
+        <div className="ps-header__logo">
+          <img src="/logo.png" alt="PolarSync Logo" className="ps-header__logo-img" />
+        </div>
         <div className="ps-header__wordmark">
           <span className="ps-header__title">POLAR SYNC</span>
           <span className="ps-header__subtitle">Antarctic Station Management</span>

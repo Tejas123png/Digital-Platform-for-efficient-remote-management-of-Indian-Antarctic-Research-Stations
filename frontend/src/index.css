@@ -94,40 +94,58 @@ body {
 .ps-header__brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-shrink: 0;
+  padding: 3px 10px 3px 4px;
+  border-radius: var(--radius-md);
+  transition: background-color 0.2s ease;
 }
 
 .ps-header__logo {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, #1c6aac, #0d3860);
-  border: 1px solid #388bfd60;
+  width: 36px;
+  height: 36px;
+  background: radial-gradient(circle at 50% 40%, rgba(56, 139, 253, 0.18), rgba(13, 27, 44, 0.75));
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  box-shadow: 0 0 10px rgba(56, 139, 253, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  overflow: hidden;
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.ps-header__logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
 }
 
 .ps-header__wordmark {
   display: flex;
   flex-direction: column;
-  line-height: 1;
+  justify-content: center;
+  gap: 2px;
 }
 
 .ps-header__title {
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  color: #fff;
+  letter-spacing: 0.16em;
+  color: #f0f6fc;
+  text-shadow: 0 0 12px rgba(88, 166, 255, 0.25);
+  line-height: 1.15;
 }
 
 .ps-header__subtitle {
-  font-size: 9px;
-  color: var(--text-secondary);
-  letter-spacing: 0.06em;
+  font-size: 8.5px;
+  font-weight: 600;
+  color: #7d8999;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  line-height: 1;
 }
 
 .ps-header__center {
