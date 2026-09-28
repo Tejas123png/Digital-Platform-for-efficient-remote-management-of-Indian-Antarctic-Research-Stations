@@ -1,212 +1,245 @@
 """
-Ollama AI Analysis Service for POLAR SYNC
-==========================================
-Provides LLM-powered analysis of station alerts using a locally running
-Ollama instance.  The deterministic anomaly detection system remains the
-source of truth — this module only *explains* already-detected anomalies.
+Ollama AI service for alert analysis.
 
-Configuration (environment variables):
-    OLLAMA_MODEL  — model tag to use          (default: qwen3:2b)
-    OLLAMA_HOST   — Ollama server address     (default: http://localhost:11434)
-    OLLAMA_TIMEOUT — request timeout seconds  (default: 60)
+Supports:
+- Local Ollama (default)
+- Remote Ollama using OLLAMA_HOST environment variable
+
+Environment variables:
+    OLLAMA_MODEL   Model name. Default: qwen3:1.7b
+    OLLAMA_HOST    Ollama server URL. Default: http://localhost:11434
+    OLLAMA_TIMEOUT Request timeout in seconds. Default: 60
 """
 
-import json
 import os
-import traceback
-from threading import Thread
-
-# ── Configuration ────────────────────────────────────────────
-OLLAMA_MODEL   = os.environ.get("OLLAMA_MODEL",   "qwen3:1.7b")
-
-# ── System prompt ────────────────────────────────────────────
-SYSTEM_PROMPT = """You are an AI operations assistant for Maitri, an Indian Antarctic research station located in the Schirmacher Oasis, Antarctica.
-
-A deterministic monitoring system has already detected an active alert. Your task is to analyze the available telemetry data and explain the likely situation to a station operator.
-
-RULES:
-- Do NOT decide whether an anomaly exists — it has already been detected.
-- Do NOT invent measurements that are not provided.
-- Do NOT claim certainty when evidence is insufficient.
-- Clearly distinguish observed facts from possible causes.
-- Keep the response concise and operational.
-- Do NOT recommend shutting down life-critical systems unless absolutely necessary.
-
-You MUST respond with valid JSON in exactly this format (no markdown, no code fences, just raw JSON):
-{
-  "summary": "One or two sentence summary of what is happening",
-  "possible_causes": ["cause 1", "cause 2"],
-  "affected_systems": ["system 1", "system 2"],
-  "risk": "Brief description of operational risk",
-  "recommended_actions": ["action 1", "action 2", "action 3"]
-}"""
+import threading
+import uuid
+from typing import Callable, Optional
 
 
-def _build_user_prompt(context: dict) -> str:
-    """Build the user prompt from alert context."""
-    alert = context.get("alert", {})
-    current = context.get("current_telemetry", {})
-    history = context.get("recent_telemetry", [])
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-    lines = []
-    lines.append(f"Station: {context.get('station', 'Maitri')}")
-    lines.append("")
-    lines.append(f"Alert Type: {alert.get('type', 'UNKNOWN')}")
-    lines.append(f"Alert Message: {alert.get('message', 'Unknown alert')}")
-    lines.append(f"Severity: {alert.get('severity', 'unknown')}")
-    if alert.get("duration_seconds") is not None:
-        lines.append(f"Alert Duration: {alert['duration_seconds']}s")
-    lines.append("")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:1.7b")
 
-    lines.append("Current Telemetry:")
-    for key, val in current.items():
-        lines.append(f"  {key}: {val}")
-    lines.append("")
+OLLAMA_HOST = os.environ.get(
+    "OLLAMA_HOST",
+    "http://localhost:11434"
+)
 
-    if history:
-        lines.append(f"Recent Telemetry Trend (last {len(history)} readings, oldest first):")
-        for i, snap in enumerate(history):
-            vals = ", ".join(f"{k}: {v}" for k, v in snap.items() if k != "timestamp")
-            lines.append(f"  [{i+1}] {vals}")
-        lines.append("")
-
-    weather = context.get("weather")
-    if weather:
-        lines.append("Weather Context:")
-        for key, val in weather.items():
-            lines.append(f"  {key}: {val}")
-        lines.append("")
-
-    lines.append("Provide your analysis as JSON.")
-    return "\n".join(lines)
+OLLAMA_TIMEOUT = int(
+    os.environ.get("OLLAMA_TIMEOUT", "60")
+)
 
 
-def _parse_response(text: str) -> dict:
-    """Try to extract valid JSON from model output, with fallbacks."""
-    if not text or not text.strip():
-        return _fallback_response("Empty response from AI model.")
+# ============================================================
+# SYSTEM PROMPT
+# ============================================================
 
-    cleaned = text.strip()
+SYSTEM_PROMPT = """
+You are an AI diagnostic assistant for PolarSync,
+a remote management platform for Indian Antarctic Research Stations.
 
-    # Strip markdown code fences if present
-    if cleaned.startswith("```"):
-        # Remove opening fence (```json or ```)
-        first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-        cleaned = cleaned[first_newline + 1:]
-        # Remove closing fence
-        if cleaned.rstrip().endswith("```"):
-            cleaned = cleaned.rstrip()[:-3].rstrip()
+Your job is to analyze station alerts and provide concise,
+practical recommendations.
 
-    # Try direct JSON parse
-    try:
-        result = json.loads(cleaned)
-        if isinstance(result, dict) and "summary" in result:
-            return _normalize_result(result)
-    except json.JSONDecodeError:
-        pass
+Focus on:
+- Safety
+- Equipment reliability
+- Energy availability
+- Environmental conditions
+- Communication systems
+- Water treatment
+- Fuel and generator systems
 
-    # Try to find JSON object in the text
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            result = json.loads(cleaned[start:end + 1])
-            if isinstance(result, dict):
-                return _normalize_result(result)
-        except json.JSONDecodeError:
-            pass
+Do not invent sensor values.
 
-    # Fallback: use the raw text as summary
-    return {
-        "summary": cleaned[:500],
-        "possible_causes": [],
-        "affected_systems": [],
-        "risk": "Unable to parse structured analysis.",
-        "recommended_actions": ["Review the alert manually."]
-    }
+Return your analysis in a clear format containing:
+
+1. Problem
+2. Possible Cause
+3. Immediate Action
+4. Recommended Follow-up
+
+Keep the response concise and operational.
+"""
 
 
-def _normalize_result(result: dict) -> dict:
-    """Ensure all expected keys exist and have correct types."""
-    return {
-        "summary":             str(result.get("summary", "No summary provided.")),
-        "possible_causes":     _ensure_list(result.get("possible_causes", [])),
-        "affected_systems":    _ensure_list(result.get("affected_systems", [])),
-        "risk":                str(result.get("risk", "Unknown risk.")),
-        "recommended_actions": _ensure_list(result.get("recommended_actions", [])),
-    }
-
-
-def _ensure_list(val) -> list:
-    if isinstance(val, list):
-        return [str(item) for item in val]
-    if isinstance(val, str):
-        return [val]
-    return []
-
+# ============================================================
+# FALLBACK RESPONSE
+# ============================================================
 
 def _fallback_response(reason: str) -> dict:
+    """
+    Returns a safe response when Ollama is unavailable.
+    """
+
     return {
-        "summary":             reason,
-        "possible_causes":     [],
-        "affected_systems":    [],
-        "risk":                "Unable to perform AI analysis.",
-        "recommended_actions": ["Inspect the alert manually.", "Check Ollama service status."],
-        "error":               True,
+        "success": False,
+        "analysis": (
+            "AI analysis is currently unavailable. "
+            "Please inspect the alert manually."
+        ),
+        "error": reason,
+        "model": OLLAMA_MODEL,
+        "host": OLLAMA_HOST,
     }
 
 
-# ── Public API ───────────────────────────────────────────────
+# ============================================================
+# BUILD USER PROMPT
+# ============================================================
+
+def _build_user_prompt(alert_context: dict) -> str:
+    """
+    Convert alert context into a structured prompt.
+    """
+
+    return f"""
+Analyze the following Antarctic station alert.
+
+Station:
+{alert_context.get("station_id", "Unknown")}
+
+Alert:
+{alert_context.get("alert_type", "Unknown")}
+
+Severity:
+{alert_context.get("severity", "Unknown")}
+
+Message:
+{alert_context.get("message", "No message provided")}
+
+Current Sensor Data:
+{alert_context.get("sensor_data", {})}
+
+Timestamp:
+{alert_context.get("timestamp", "Unknown")}
+
+Provide:
+
+1. Problem
+2. Possible Cause
+3. Immediate Action
+4. Recommended Follow-up
+
+Keep the response concise and operational.
+"""
+
+
+# ============================================================
+# SYNCHRONOUS ANALYSIS
+# ============================================================
 
 def analyze_alert(alert_context: dict) -> dict:
     """
-    Synchronous call to Ollama for alert analysis.
-    Returns a structured dict.  Never raises — always returns a result.
+    Analyze an alert using Ollama.
+
+    OLLAMA_HOST determines which Ollama server is used.
     """
+
+    # Import only what we actually use
     try:
-        from ollama import chat
+        from ollama import Client
     except ImportError:
         return _fallback_response(
-            "Ollama Python package is not installed. Run: pip install ollama"
+            "Ollama Python package is not installed. "
+            "Run: pip install ollama"
         )
 
     user_prompt = _build_user_prompt(alert_context)
 
     try:
-        response = chat(
-            model=OLLAMA_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": user_prompt},
-            ],
-            options={"temperature": 0.3, "num_predict": 1024},
+        # ----------------------------------------------------
+        # Create Ollama client
+        # ----------------------------------------------------
+
+        client = Client(
+            host=OLLAMA_HOST
         )
 
-        text = response.message.content if response and response.message else ""
-        return _parse_response(text)
+        # ----------------------------------------------------
+        # Send request to Ollama
+        # ----------------------------------------------------
+
+        response = client.chat(
+            model=OLLAMA_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt
+                }
+            ],
+            options={
+                "temperature": 0.3,
+                "num_predict": 1024
+            }
+        )
+
+        # ----------------------------------------------------
+        # Extract response
+        # ----------------------------------------------------
+
+        message = response.get("message", {})
+
+        analysis = message.get(
+            "content",
+            ""
+        )
+
+        if not analysis:
+            return _fallback_response(
+                "Ollama returned an empty response."
+            )
+
+        return {
+            "success": True,
+            "analysis": analysis,
+            "model": OLLAMA_MODEL,
+            "host": OLLAMA_HOST
+        }
 
     except Exception as e:
-        error_msg = str(e)
-        if "refused" in error_msg.lower() or "connection" in error_msg.lower():
-            return _fallback_response(
-                "Ollama service is offline. Start Ollama and try again."
-            )
-        if "not found" in error_msg.lower() or "pull" in error_msg.lower():
-            return _fallback_response(
-                f"Model '{OLLAMA_MODEL}' not found. Run: ollama pull {OLLAMA_MODEL}"
-            )
-        traceback.print_exc()
-        return _fallback_response(f"AI analysis failed: {error_msg[:200]}")
+        return _fallback_response(
+            f"Failed to connect to Ollama: {str(e)}"
+        )
 
 
-def analyze_alert_async(alert_context: dict, callback):
+# ============================================================
+# ASYNC ANALYSIS
+# ============================================================
+
+def analyze_alert_async(
+    alert_context: dict,
+    callback: Optional[Callable[[dict], None]] = None
+) -> str:
     """
-    Run analysis in a background thread so it doesn't block the caller.
-    callback(result_dict) is called from the background thread.
+    Run alert analysis in a background thread.
+
+    Returns a job ID immediately.
     """
-    def _worker():
+
+    job_id = str(uuid.uuid4())
+
+    def worker():
         result = analyze_alert(alert_context)
-        callback(result)
-    thread = Thread(target=_worker, daemon=True)
+
+        if callback:
+            try:
+                callback(result)
+            except Exception:
+                pass
+
+    thread = threading.Thread(
+        target=worker,
+        daemon=True
+    )
+
     thread.start()
-    return thread
+
+    return job_id
