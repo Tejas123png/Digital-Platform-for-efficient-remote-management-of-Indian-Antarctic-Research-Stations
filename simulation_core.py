@@ -404,8 +404,12 @@ class SimulationCore:
             )
         else:
             infra.backup_heater_active = False
+            # When idle, the backup heater has natural recovery (routine
+            # maintenance) that slightly outweighs background wear.
+            idle_wear = rng.uniform(0.001, 0.01)
+            idle_recovery = rng.uniform(0.002, 0.012)
             infra.backup_heater_health = clamp(
-                infra.backup_heater_health - rng.uniform(0.001, 0.01), 0.0, 100.0
+                infra.backup_heater_health - idle_wear + idle_recovery, 0.0, 100.0
             )
 
         if "HEATING_SURGE" in s.active_scenarios:
@@ -430,11 +434,17 @@ class SimulationCore:
         # always being forced to 1.
         # High humidity accelerates corrosion/condensation-related wear
         # on water treatment equipment -- HUMIDITY_ANOMALY's real effect.
+        #
+        # Natural recovery: routine maintenance / self-regulation drifts
+        # health back toward a setpoint during normal conditions, so the
+        # value oscillates realistically instead of monotonically dying.
         water_wear_low, water_wear_high = 0.001, 0.01
+        water_recovery = rng.uniform(0.002, 0.012)
         if s.environment.humidity > 85.0:
             water_wear_low, water_wear_high = 0.03, 0.08
+            water_recovery = 0.0  # no recovery during harsh conditions
         infra.water_treatment_health = clamp(
-            infra.water_treatment_health - rng.uniform(water_wear_low, water_wear_high), 0.0, 100.0
+            infra.water_treatment_health - rng.uniform(water_wear_low, water_wear_high) + water_recovery, 0.0, 100.0
         )
         if infra.water_treatment_health <= 20.0 or "PUMP_FAILURE" in s.active_scenarios:
             infra.water_treatment_status = "OFFLINE"
@@ -448,10 +458,12 @@ class SimulationCore:
         # from high wind (antenna/mast strain) or humidity (corrosion) --
         # EXTREME_WIND and HUMIDITY_ANOMALY both get a real effect here.
         comms_wear_low, comms_wear_high = 0.001, 0.01
+        comms_recovery = rng.uniform(0.002, 0.012)
         if s.environment.wind_speed > 80.0 or s.environment.humidity > 85.0:
             comms_wear_low, comms_wear_high = 0.05, 0.15
+            comms_recovery = 0.0  # no recovery during harsh conditions
         infra.communication_equipment_health = clamp(
-            infra.communication_equipment_health - rng.uniform(comms_wear_low, comms_wear_high), 0.0, 100.0
+            infra.communication_equipment_health - rng.uniform(comms_wear_low, comms_wear_high) + comms_recovery, 0.0, 100.0
         )
         if infra.communication_equipment_health <= 20.0:
             infra.communication_equipment_status = "OFFLINE"
@@ -481,6 +493,25 @@ class SimulationCore:
         pressure_derate = clamp(
             1.0 - max(0.0, 1013.0 - s.environment.air_pressure) * 0.0008, 0.85, 1.0
         )
+
+        # Generator status consistency: if fuel is exhausted or health
+        # is critically low, the generator cannot keep running. If it
+        # was stopped due to fuel/health but conditions have recovered
+        # (e.g. day-tank refilled from reserve), auto-restart it.
+        if energy.generator_status == "RUNNING":
+            if energy.fuel_level <= 0.0 and log.generator_fuel_reserve_l <= 0.0:
+                energy.generator_status = "STOPPED"
+            elif energy.generator_health <= 5.0:
+                energy.generator_status = "FAULT"
+        elif energy.generator_status in ("STOPPED", "FAULT"):
+            # Auto-restart: if fuel is available and health has recovered
+            # above the fault threshold, the generator can restart —
+            # unless a GENERATOR_FAILURE scenario is actively holding
+            # it in STOPPED.
+            if (energy.fuel_level > 5.0
+                    and energy.generator_health > 15.0
+                    and "GENERATOR_FAILURE" not in s.active_scenarios):
+                energy.generator_status = "RUNNING"
 
         if energy.generator_status == "RUNNING":
             max_capacity = 120.0
@@ -525,6 +556,20 @@ class SimulationCore:
         fuel_usage = energy.power_generation * 0.0007 + rng.uniform(0.01, 0.03)
         energy.fuel_level = clamp(energy.fuel_level - fuel_usage, 0.0, 100.0)
 
+        # Day-tank auto-refill from bulk reserve: when fuel_level (the
+        # day-tank gauge, 0-100%) drops below 25%, refill it from the
+        # bulk generator_fuel_reserve_l — simulating real-world periodic
+        # day-tank refueling. This prevents the gauge from permanently
+        # sitting at 0% while 200,000 L of fuel sits in the reserve.
+        if energy.fuel_level < 25.0 and log.generator_fuel_reserve_l > 0.0:
+            refill_amount = min(75.0 - energy.fuel_level, 50.0)  # refill up to 75%
+            # Convert gauge % to litres: day-tank is ~500 L capacity
+            litres_needed = refill_amount * 5.0  # 500L tank / 100% = 5 L per %
+            litres_available = min(litres_needed, log.generator_fuel_reserve_l)
+            actual_refill = litres_available / 5.0
+            energy.fuel_level = clamp(energy.fuel_level + actual_refill, 0.0, 100.0)
+            log.generator_fuel_reserve_l = max(0.0, log.generator_fuel_reserve_l - litres_available)
+
         energy_difference = energy.power_generation - energy.power_consumption
         energy.battery_soc = clamp(
             energy.battery_soc + energy_difference * 0.03 + rng.normal(0, 0.2),
@@ -534,12 +579,19 @@ class SimulationCore:
             energy.generator_status != "RUNNING" and energy.battery_soc <= 0.0
         )
 
+        # Generator health: during faults or active failure scenarios,
+        # health degrades faster. During normal operation, there is a
+        # small background wear but also natural recovery (routine
+        # maintenance / self-regulation), so health oscillates around a
+        # steady-state (~90-95%) rather than monotonically dying to 0.
         if energy.generator_status == "FAULT":
             energy.generator_health = clamp(energy.generator_health - rng.uniform(0.02, 0.05), 0.0, 100.0)
         elif "GENERATOR_FAILURE" in s.active_scenarios:
             energy.generator_health = clamp(energy.generator_health - rng.uniform(3.0, 6.0), 0.0, 100.0)
         else:
-            energy.generator_health = clamp(energy.generator_health - rng.uniform(0.001, 0.01), 0.0, 100.0)
+            wear = rng.uniform(0.001, 0.01)
+            recovery = rng.uniform(0.002, 0.012)
+            energy.generator_health = clamp(energy.generator_health - wear + recovery, 0.0, 100.0)
 
         if "HIGH_VIBRATION" in s.active_scenarios:
             infra.vibration = clamp(
