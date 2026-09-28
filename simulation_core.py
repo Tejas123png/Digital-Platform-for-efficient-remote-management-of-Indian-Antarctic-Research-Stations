@@ -585,7 +585,8 @@ class SimulationCore:
         # maintenance / self-regulation), so health oscillates around a
         # steady-state (~90-95%) rather than monotonically dying to 0.
         if energy.generator_status == "FAULT":
-            energy.generator_health = clamp(energy.generator_health - rng.uniform(0.02, 0.05), 0.0, 100.0)
+            # Simulate automated repair/recovery when faulted so the demo can eventually resume
+            energy.generator_health = clamp(energy.generator_health + rng.uniform(0.1, 0.3), 0.0, 100.0)
         elif "GENERATOR_FAILURE" in s.active_scenarios:
             energy.generator_health = clamp(energy.generator_health - rng.uniform(3.0, 6.0), 0.0, 100.0)
         else:
