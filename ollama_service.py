@@ -1,14 +1,9 @@
 """
-Ollama AI service for alert analysis.
+Ollama Cloud AI service for PolarSync alert analysis.
 
-Supports:
-- Local Ollama (default)
-- Remote Ollama using OLLAMA_HOST environment variable
-
-Environment variables:
-    OLLAMA_MODEL   Model name. Default: qwen3:1.7b
-    OLLAMA_HOST    Ollama server URL. Default: http://localhost:11434
-    OLLAMA_TIMEOUT Request timeout in seconds. Default: 60
+Required environment variables:
+    OLLAMA_API_KEY   Your Ollama Cloud API key
+    OLLAMA_MODEL     Cloud model name (default: gemma4:31b)
 """
 
 import os
@@ -16,16 +11,23 @@ import threading
 import uuid
 from typing import Callable, Optional
 
+import requests
+
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:1.7b")
+OLLAMA_API_URL = "https://ollama.com/api/chat"
 
-OLLAMA_HOST = os.environ.get(
-    "OLLAMA_HOST",
-    "http://localhost:11434"
+OLLAMA_API_KEY = os.environ.get(
+    "OLLAMA_API_KEY",
+    ""
+)
+
+OLLAMA_MODEL = os.environ.get(
+    "OLLAMA_MODEL",
+    "gemma4:31b"
 )
 
 OLLAMA_TIMEOUT = int(
@@ -55,7 +57,7 @@ Focus on:
 
 Do not invent sensor values.
 
-Return your analysis in a clear format containing:
+Return your analysis in this format:
 
 1. Problem
 2. Possible Cause
@@ -71,10 +73,6 @@ Keep the response concise and operational.
 # ============================================================
 
 def _fallback_response(reason: str) -> dict:
-    """
-    Returns a safe response when Ollama is unavailable.
-    """
-
     return {
         "success": False,
         "analysis": (
@@ -83,7 +81,6 @@ def _fallback_response(reason: str) -> dict:
         ),
         "error": reason,
         "model": OLLAMA_MODEL,
-        "host": OLLAMA_HOST,
     }
 
 
@@ -92,10 +89,6 @@ def _fallback_response(reason: str) -> dict:
 # ============================================================
 
 def _build_user_prompt(alert_context: dict) -> str:
-    """
-    Convert alert context into a structured prompt.
-    """
-
     return f"""
 Analyze the following Antarctic station alert.
 
@@ -133,80 +126,75 @@ Keep the response concise and operational.
 # ============================================================
 
 def analyze_alert(alert_context: dict) -> dict:
-    """
-    Analyze an alert using Ollama.
 
-    OLLAMA_HOST determines which Ollama server is used.
-    """
-
-    # Import only what we actually use
-    try:
-        from ollama import Client
-    except ImportError:
+    if not OLLAMA_API_KEY:
         return _fallback_response(
-            "Ollama Python package is not installed. "
-            "Run: pip install ollama"
+            "OLLAMA_API_KEY is not configured."
         )
 
     user_prompt = _build_user_prompt(alert_context)
 
     try:
-        # ----------------------------------------------------
-        # Create Ollama client
-        # ----------------------------------------------------
 
-        client = Client(
-            host=OLLAMA_HOST
+        response = requests.post(
+            OLLAMA_API_URL,
+            headers={
+                "Authorization": f"Bearer {OLLAMA_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": OLLAMA_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": SYSTEM_PROMPT,
+                    },
+                    {
+                        "role": "user",
+                        "content": user_prompt,
+                    },
+                ],
+                "stream": False,
+            },
+            timeout=OLLAMA_TIMEOUT,
         )
 
-        # ----------------------------------------------------
-        # Send request to Ollama
-        # ----------------------------------------------------
+        response.raise_for_status()
 
-        response = client.chat(
-            model=OLLAMA_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": user_prompt
-                }
-            ],
-            options={
-                "temperature": 0.3,
-                "num_predict": 1024
-            }
-        )
+        data = response.json()
 
-        # ----------------------------------------------------
-        # Extract response
-        # ----------------------------------------------------
-
-        message = response.get("message", {})
-
-        analysis = message.get(
+        analysis = data.get(
+            "message",
+            {}
+        ).get(
             "content",
             ""
         )
 
         if not analysis:
             return _fallback_response(
-                "Ollama returned an empty response."
+                "Ollama Cloud returned an empty response."
             )
 
         return {
             "success": True,
             "analysis": analysis,
             "model": OLLAMA_MODEL,
-            "host": OLLAMA_HOST
         }
+
+    except requests.exceptions.Timeout:
+        return _fallback_response(
+            "Ollama Cloud request timed out."
+        )
+
+    except requests.exceptions.RequestException as e:
+        return _fallback_response(
+            f"Failed to connect to Ollama Cloud: {str(e)}"
+        )
 
     except Exception as e:
         return _fallback_response(
-            f"Failed to connect to Ollama: {str(e)}"
+            f"AI analysis failed: {str(e)}"
         )
 
 
@@ -216,13 +204,8 @@ def analyze_alert(alert_context: dict) -> dict:
 
 def analyze_alert_async(
     alert_context: dict,
-    callback: Optional[Callable[[dict], None]] = None
+    callback: Optional[Callable[[dict], None]] = None,
 ) -> str:
-    """
-    Run alert analysis in a background thread.
-
-    Returns a job ID immediately.
-    """
 
     job_id = str(uuid.uuid4())
 
@@ -237,7 +220,7 @@ def analyze_alert_async(
 
     thread = threading.Thread(
         target=worker,
-        daemon=True
+        daemon=True,
     )
 
     thread.start()
