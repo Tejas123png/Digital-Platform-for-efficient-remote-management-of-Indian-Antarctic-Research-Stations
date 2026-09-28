@@ -88,6 +88,22 @@ const ROOM_ZONES = [
     // Utility Building — green building lower left
     left: '11.1%', top: '62.8%', width: '9.7%', height: '18.6%',
   },
+
+  // ── COMMUNICATIONS ───────────────────────────────────────────
+  {
+    id: 'comms',
+    key: 'comms_antenna',
+    // Communications Antenna/Mast — bottom-center of the station map
+    left: '57.0%', top: '69.0%', width: '13.0%', height: '22.0%',
+    isCompact: true,
+  },
+  {
+    id: 'comms',
+    key: 'comms_dish',
+    // Satellite Dish — left side of the station map
+    left: '8.2%', top: '41.5%', width: '8.5%', height: '15.0%',
+    isCompact: true,
+  },
 ];
 
 export default React.memo(function DigitalTwin({ stationData, selectedRoom, onRoomSelect, alerts }) {
@@ -121,18 +137,19 @@ export default React.memo(function DigitalTwin({ stationData, selectedRoom, onRo
         {/* Interactive hotspot overlay — exactly covers image */}
         <div className="ps-twin__overlays" aria-hidden={false}>
           {ROOM_ZONES.map((zone) => {
-            const status = getRoomStatus(zone.id);
-            const isSelected = selectedRoom === zone.id;
-            const hasAlert = alertRoomIds.has(zone.id);
+            const roomId = zone.id;
+            const status = getRoomStatus(roomId);
+            const isSelected = selectedRoom === roomId;
+            const hasAlert = alertRoomIds.has(roomId);
             const zoneStatus = hasAlert ? status : '';
             const compactClass = zone.isCompact ? 'compact' : '';
 
             return (
               <div
-                key={zone.id}
+                key={zone.key ?? zone.id}
                 role="button"
                 tabIndex={0}
-                aria-label={`Select ${getRoomName(zone.id)}`}
+                aria-label={`Select ${getRoomName(roomId)}`}
                 className={`ps-room-zone ${isSelected ? 'selected' : ''} ${zoneStatus} ${compactClass}`}
                 style={{
                   left:   zone.left,
@@ -140,13 +157,13 @@ export default React.memo(function DigitalTwin({ stationData, selectedRoom, onRo
                   width:  zone.width,
                   height: zone.height,
                 }}
-                title={getRoomName(zone.id)}
-                onClick={() => onRoomSelect(isSelected ? null : zone.id)}
-                onKeyDown={(e) => e.key === 'Enter' && onRoomSelect(isSelected ? null : zone.id)}
+                title={getRoomName(roomId)}
+                onClick={() => onRoomSelect(isSelected ? null : roomId)}
+                onKeyDown={(e) => e.key === 'Enter' && onRoomSelect(isSelected ? null : roomId)}
               >
                 <div className="ps-room-zone__badge">
                   <span className={`ps-room-zone__dot ${status}`} />
-                  <span className="ps-room-zone__label">{getRoomName(zone.id)}</span>
+                  <span className="ps-room-zone__label">{getRoomName(roomId)}</span>
                 </div>
 
                 {/* Debug overlay — shows zone boundaries and coords */}
@@ -166,7 +183,7 @@ export default React.memo(function DigitalTwin({ stationData, selectedRoom, onRo
                     alignItems: 'center',
                     pointerEvents: 'none',
                   }}>
-                    <strong>{zone.id}</strong>
+                    <strong>{roomId}</strong>
                     <span>L:{zone.left} T:{zone.top}</span>
                     <span>W:{zone.width} H:{zone.height}</span>
                   </span>
