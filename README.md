@@ -11,7 +11,7 @@
 Operating in Antarctica presents severe engineering challenges: geomagnetic storms cause frequent satellite blackouts, temperatures drop below -50°C, and life-safety systems (Generators, Heating, Fuel) demand instant local response. PolarSync solves this with an **Edge-First Architecture**, ensuring zero data loss and strict priority synchronization even during total network blackouts.
 
 ---
-
+**Live Demo**:https://superb-alignment-production-9ffb.up.railway.app/
 ## 📸 Quick Overview
 
 ```text
